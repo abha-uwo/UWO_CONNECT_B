@@ -477,8 +477,9 @@ class WhatsAppWebhookView(APIView):
         Calls Meta Graph API to send a text or interactive message
         """
         url = f"https://graph.facebook.com/{os.getenv('WHATSAPP_API_VERSION', 'v19.0')}/{phone_number_id}/messages"
+        token = os.getenv('META_SYSTEM_TOKEN', client.whatsapp_access_token)
         headers = {
-            "Authorization": f"Bearer {client.whatsapp_access_token}",
+            "Authorization": f"Bearer {token}",
             "Content-Type": "application/json"
         }
         
@@ -738,12 +739,13 @@ class TemplateViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['post'])
     def sync_from_meta(self, request):
         client = request.user.client
-        if not client.whatsapp_waba_id or not client.whatsapp_access_token:
+        token = os.getenv('META_SYSTEM_TOKEN', client.whatsapp_access_token)
+        if not client.whatsapp_waba_id or not token:
             return Response({"message": "WhatsApp WABA ID or Access Token is missing in client settings."}, status=400)
         
         url = f"https://graph.facebook.com/v19.0/{client.whatsapp_waba_id}/message_templates"
         headers = {
-            "Authorization": f"Bearer {client.whatsapp_access_token}"
+            "Authorization": f"Bearer {token}"
         }
         try:
             res = requests.get(url, headers=headers)
@@ -787,7 +789,8 @@ class CampaignViewSet(viewsets.ModelViewSet):
             client = campaign.client
             template = campaign.template
             
-            if not template or not client.whatsapp_access_token or not client.whatsapp_phone_number_id:
+            token = os.getenv('META_SYSTEM_TOKEN', client.whatsapp_access_token)
+            if not template or not token or not client.whatsapp_phone_number_id:
                 campaign.status = 'FAILED'
                 campaign.save()
                 return
@@ -799,8 +802,9 @@ class CampaignViewSet(viewsets.ModelViewSet):
                 contacts = Contact.objects.filter(client=client, stage=campaign.audience_filter)
 
             url = f"https://graph.facebook.com/v19.0/{client.whatsapp_phone_number_id}/messages"
+            token = os.getenv('META_SYSTEM_TOKEN', client.whatsapp_access_token)
             headers = {
-                "Authorization": f"Bearer {client.whatsapp_access_token}",
+                "Authorization": f"Bearer {token}",
                 "Content-Type": "application/json"
             }
 
