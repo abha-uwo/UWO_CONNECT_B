@@ -900,12 +900,11 @@ class ForgotPasswordSendOTPView(views.APIView):
         # Create OTP record
         PasswordResetOTP.objects.create(email=email, otp=otp)
         
-        # Send Email via Resend API
-        resend_api_key = os.getenv("RESEND_API_KEY", "")
-        try:
-            if resend_api_key:
-                resend.api_key = resend_api_key
-                html_body = f"""<!DOCTYPE html>
+        # Send Email via Django SMTP (configured in settings.py)
+        from django.core.mail import send_mail
+        from django.conf import settings
+        
+        html_body = f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"></head>
 <body style="margin:0;padding:0;background:#f4f4f5;font-family:'Segoe UI',sans-serif;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 0;">
@@ -937,26 +936,19 @@ class ForgotPasswordSendOTPView(views.APIView):
     </td></tr>
   </table>
 </body></html>"""
-                params = resend.Emails.SendParams(
-                    from_="Meta Connect <onboarding@resend.dev>",
-                    to=[email],
-                    subject="Your Password Reset OTP - Meta Connect",
-                    html=html_body,
-                )
-                resend.Emails.send(params)
-            else:
-                # Fallback: Django mail (console in dev if no SMTP set)
-                from django.core.mail import send_mail
-                send_mail(
-                    "Your Password Reset OTP - Meta Connect",
-                    f"Your OTP is: {otp}\nValid for 15 minutes.",
-                    'no-reply@metaconnect.app',
-                    [email]
-                )
-            print(f"\n[OTP] Sent {otp} to {email}\n")
+        
+        try:
+            send_mail(
+                subject="Your Password Reset OTP - Meta Connect",
+                message=f"Your OTP for resetting your Meta Connect password is: {otp}.\nThis OTP is valid for 15 minutes.",
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[email],
+                html_message=html_body
+            )
+            print(f"\n[OTP] Sent {otp} to {email} via SMTP\n")
             return Response({"message": "OTP sent to your email successfully"})
         except Exception as e:
-            print(f"Email error: {str(e)}")
+            print(f"Email SMTP send error: {str(e)}")
             return Response({"message": f"Failed to send email: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @method_decorator(csrf_exempt, name='dispatch')
