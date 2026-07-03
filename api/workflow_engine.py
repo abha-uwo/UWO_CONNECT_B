@@ -7,7 +7,16 @@ class WorkflowEngine:
         """
         Process the incoming text to advance an active workflow session,
         or start a new workflow session if a trigger matches.
-        Returns the (text_response, buttons_response) to send, or (None, None) if no workflow logic applies.
+        Returns a list of dicts representing messages to send:
+        [
+          {
+            "type": "text" | "buttons" | "image" | "video",
+            "body": "...",
+            "buttons": ["...", ...],
+            "media_url": "..."
+          }
+        ]
+        Or returns None if no workflow logic applies.
         """
         incoming_text_lower = incoming_text.lower().strip()
 
@@ -27,30 +36,29 @@ class WorkflowEngine:
         for wf in workflows:
             if isinstance(wf.trigger_value, list):
                 # Ensure lowercase comparison
-                trigger_keywords = [t.lower() for t in wf.trigger_value]
+                trigger_keywords = [t.lower().strip() for t in wf.trigger_value if isinstance(t, str)]
                 if incoming_text_lower in trigger_keywords:
                     # Found a matching workflow, start it!
                     return WorkflowEngine._start_workflow(client, phone_number, wf)
             elif isinstance(wf.trigger_value, str):
-                if incoming_text_lower == wf.trigger_value.lower():
+                if incoming_text_lower == wf.trigger_value.lower().strip():
                     return WorkflowEngine._start_workflow(client, phone_number, wf)
 
-        return None, None
+        return None
 
     @staticmethod
     def _start_workflow(client, phone_number, workflow):
         # Parse the JSON steps
         steps = workflow.steps
         if not steps or 'nodes' not in steps:
-            return None, None
+            return None
             
         nodes = steps.get('nodes', [])
-        edges = steps.get('edges', [])
 
         # Find the trigger (start) node
         start_node = next((n for n in nodes if n.get('type') == 'trigger'), None)
         if not start_node:
-            return None, None
+            return None
 
         # Create session
         session = WorkflowSession.objects.create(
@@ -69,19 +77,21 @@ class WorkflowEngine:
         nodes = steps.get('nodes', [])
         edges = steps.get('edges', [])
         
+        # Get contact for checking conditions
+        from .models import Contact
+        contact = Contact.objects.filter(client=session.client, platform_id=session.phone_number).first()
+
+        messages_to_send = []
         current_node_id = session.current_node_id
-        current_node = next((n for n in nodes if n.get('id') == current_node_id), None)
         
+        current_node = next((n for n in nodes if n.get('id') == current_node_id), None)
         if not current_node:
             session.is_active = False
             session.save()
-            return None, None
+            return None
 
-        # Determine which edge to follow
-        next_edge = None
-
+        # 1. If currently at a buttons node, select branch based on incoming_text
         if current_node.get('type') == 'buttons':
-            # We must match the user's text exactly with one of the buttons
             buttons = current_node.get('data', {}).get('buttons', [])
             matched_index = -1
             for i, btn_text in enumerate(buttons):
@@ -91,42 +101,131 @@ class WorkflowEngine:
             
             if matched_index != -1:
                 source_handle = f"btn-{matched_index}"
-                # Find edge with this sourceHandle
                 next_edge = next((e for e in edges if e.get('source') == current_node_id and e.get('sourceHandle') == source_handle), None)
+                if next_edge:
+                    current_node_id = next_edge.get('target')
+                else:
+                    # No connection from this button, end the session
+                    session.is_active = False
+                    session.save()
+                    return None
             else:
-                # If they typed something else, repeat the current node (don't advance)
-                return WorkflowEngine._get_node_response(current_node)
+                # User did not select a valid button. Reprompt them.
+                return [WorkflowEngine._format_node_response(current_node)]
+
+        # 2. Sequential node traversal loop
+        while True:
+            current_node = next((n for n in nodes if n.get('id') == current_node_id), None)
+            if not current_node:
+                # Invalid node, end session
+                session.is_active = False
+                session.save()
+                break
+
+            node_type = current_node.get('type')
+
+            if node_type == 'trigger':
+                next_edge = next((e for e in edges if e.get('source') == current_node_id), None)
+                if next_edge:
+                    current_node_id = next_edge.get('target')
+                    continue
+                else:
+                    session.is_active = False
+                    session.save()
+                    break
+
+            elif node_type == 'condition':
+                condition_text = current_node.get('data', {}).get('condition', '')
+                result = WorkflowEngine._evaluate_condition(contact, condition_text)
+                source_handle = 'true' if result else 'false'
+                next_edge = next((e for e in edges if e.get('source') == current_node_id and e.get('sourceHandle') == source_handle), None)
+                if next_edge:
+                    current_node_id = next_edge.get('target')
+                    continue
+                else:
+                    session.is_active = False
+                    session.save()
+                    break
+
+            elif node_type in ['plain', 'default', 'image', 'video', 'buttons']:
+                messages_to_send.append(WorkflowEngine._format_node_response(current_node))
                 
-        else:
-            # For plain nodes or trigger nodes, just follow the first available edge
-            next_edge = next((e for e in edges if e.get('source') == current_node_id), None)
+                # Save the active node in session
+                session.current_node_id = current_node_id
+                session.save()
 
-        if not next_edge:
-            # End of workflow reached
-            session.is_active = False
-            session.save()
-            return None, None
+                if node_type == 'buttons':
+                    # Stop traversing: wait for user selection
+                    break
 
-        # Move to the target node
-        next_node_id = next_edge.get('target')
-        next_node = next((n for n in nodes if n.get('id') == next_node_id), None)
+                # For plain, image, video nodes: advance to next node
+                next_edge = next((e for e in edges if e.get('source') == current_node_id), None)
+                if next_edge:
+                    current_node_id = next_edge.get('target')
+                    continue
+                else:
+                    # End of path reached
+                    session.is_active = False
+                    session.save()
+                    break
+            else:
+                # Unknown node type
+                session.is_active = False
+                session.save()
+                break
 
-        if not next_node:
-            session.is_active = False
-            session.save()
-            return None, None
-
-        # Update session
-        session.current_node_id = next_node_id
-        session.save()
-
-        # If the next node is also a routing node without a message (unlikely in this UI), we'd recurse.
-        # But based on the templateData, all target nodes have messages.
-        return WorkflowEngine._get_node_response(next_node)
+        return messages_to_send if messages_to_send else None
 
     @staticmethod
-    def _get_node_response(node):
+    def _evaluate_condition(contact, condition_text):
+        if not contact or not condition_text:
+            return False
+        
+        condition_clean = condition_text.strip().lower()
+        
+        # 1. Check for Tag condition: "tag = <tagname>"
+        if 'tag' in condition_clean and '=' in condition_clean:
+            parts = condition_clean.split('=', 1)
+            tag_target = parts[1].strip()
+            if not contact.tags:
+                return False
+            contact_tags_lower = [t.lower().strip() for t in contact.tags if isinstance(t, str)]
+            return tag_target in contact_tags_lower
+            
+        # 2. Check for Stage condition: "stage = <stagename>"
+        if 'stage' in condition_clean and '=' in condition_clean:
+            parts = condition_clean.split('=', 1)
+            stage_target = parts[1].strip()
+            if not contact.stage:
+                return False
+            stage_clean = contact.stage.lower().strip()
+            return stage_target in stage_clean or stage_clean in stage_target
+            
+        # Fallback: exact tag check
+        if contact.tags:
+            contact_tags_lower = [t.lower().strip() for t in contact.tags if isinstance(t, str)]
+            if condition_clean in contact_tags_lower:
+                return True
+                
+        return False
+
+    @staticmethod
+    def _format_node_response(node):
+        node_type = node.get('type')
         data = node.get('data', {})
-        message = data.get('message', '')
-        buttons = data.get('buttons', [])
-        return message, buttons
+        
+        node_type_clean = node_type
+        if node_type_clean in ['plain', 'default']:
+            node_type_clean = 'text'
+
+        res = {
+            "type": node_type_clean,
+            "body": data.get('message', ''),
+        }
+        
+        if node_type == 'buttons':
+            res["buttons"] = data.get('buttons', [])
+        elif node_type in ['image', 'video']:
+            res["media_url"] = data.get('mediaUrl')
+            
+        return res

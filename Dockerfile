@@ -19,4 +19,4 @@ COPY . /app/
 EXPOSE 8080
 
 # Server start karne ki command
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8080"]
+CMD ["gunicorn", "core.wsgi:application", "--bind", "0.0.0.0:8080", "--workers", "3"]

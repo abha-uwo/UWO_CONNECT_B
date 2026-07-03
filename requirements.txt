@@ -36,3 +36,5 @@ tzdata==2026.2
 urllib3==2.6.3
 django-storages
 azure-storage-blob
+gunicorn==23.0.0
+google-cloud-storage==2.14.0

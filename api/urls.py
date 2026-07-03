@@ -1,6 +1,12 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import RegisterView, LoginView, ClientViewSet, AutomationViewSet, WorkflowViewSet, ContactViewSet, AdminStatsView, AdminAutomationsView, AdminMessagesView, WhatsAppWebhookView, AdminUsersView, ProfileView, ClientMessagesView, GlobalSettingsView, PlatformAssistantView, KnowledgeBaseView, TemplateViewSet, CampaignViewSet
+from .views import (
+    RegisterView, LoginView, ClientViewSet, AutomationViewSet, WorkflowViewSet, 
+    ContactViewSet, AdminStatsView, AdminAutomationsView, AdminMessagesView, 
+    WhatsAppWebhookView, AdminUsersView, ProfileView, ClientMessagesView, 
+    GlobalSettingsView, PlatformAssistantView, KnowledgeBaseView, TemplateViewSet, 
+    CampaignViewSet, ForgotPasswordSendOTPView, ForgotPasswordVerifyOTPView, ForgotPasswordResetView
+)
 
 router = DefaultRouter()
 router.register(r'clients', ClientViewSet, basename='client')
@@ -14,6 +20,9 @@ urlpatterns = [
     path('', include(router.urls)),
     path('auth/register', RegisterView.as_view(), name='register'),
     path('auth/login', LoginView.as_view(), name='login'),
+    path('auth/forgot-password/send-otp', ForgotPasswordSendOTPView.as_view(), name='forgot-password-send-otp'),
+    path('auth/forgot-password/verify-otp', ForgotPasswordVerifyOTPView.as_view(), name='forgot-password-verify-otp'),
+    path('auth/forgot-password/reset', ForgotPasswordResetView.as_view(), name='forgot-password-reset'),
     path('profile', ProfileView.as_view(), name='profile'),
     path('messages/', ClientMessagesView.as_view(), name='client-messages'),
     path('admin/stats', AdminStatsView.as_view(), name='admin-stats'),

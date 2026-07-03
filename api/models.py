@@ -54,6 +54,15 @@ class User(AbstractUser):
     def __str__(self):
         return f"{self.username} ({self.role})"
 
+class PasswordResetOTP(models.Model):
+    email = models.EmailField()
+    otp = models.CharField(max_length=6)
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_verified = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"{self.email} - {self.otp}"
+
 class Automation(models.Model):
     TRIGGER_CHOICES = [
         ('KEYWORD', 'Keyword'),
