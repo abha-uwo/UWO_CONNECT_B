@@ -880,7 +880,7 @@ class ForgotPasswordSendOTPView(views.APIView):
 
     def post(self, req):
         import random
-        from django.core.mail import send_mail
+        import resend
         from .models import PasswordResetOTP
         
         email = req.data.get('email', '').lower().strip()
@@ -900,14 +900,63 @@ class ForgotPasswordSendOTPView(views.APIView):
         # Create OTP record
         PasswordResetOTP.objects.create(email=email, otp=otp)
         
-        # Send Email
+        # Send Email via Resend API
+        resend_api_key = os.getenv("RESEND_API_KEY", "")
         try:
-            subject = "Your Password Reset OTP - Meta Connect"
-            message = f"Your OTP for resetting your Meta Connect password is: {otp}.\nThis OTP is valid for 15 minutes."
-            send_mail(subject, message, 'no-reply@metaconnect.app', [email])
-            print(f"\n========================================\n[OTP EMAIL] Sent OTP {otp} to {email}\n========================================\n")
+            if resend_api_key:
+                resend.api_key = resend_api_key
+                html_body = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:'Segoe UI',sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:40px 0;">
+    <tr><td align="center">
+      <table width="480" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.06);">
+        <tr>
+          <td style="background:linear-gradient(135deg,#16A34A,#059669);padding:36px 40px;text-align:center;">
+            <h1 style="color:#fff;margin:0;font-size:24px;font-weight:700;">Meta Connect</h1>
+            <p style="color:rgba(255,255,255,0.8);margin:6px 0 0;font-size:13px;">Password Reset Request</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:40px;">
+            <p style="color:#374151;font-size:15px;margin:0 0 20px;">Hi there,</p>
+            <p style="color:#374151;font-size:15px;margin:0 0 28px;">Use the OTP below to reset your Meta Connect password. This code expires in <strong>15 minutes</strong>.</p>
+            <div style="background:#f0fdf4;border:2px dashed #16A34A;border-radius:16px;padding:28px;text-align:center;margin:0 0 28px;">
+              <p style="margin:0 0 8px;color:#6b7280;font-size:12px;font-weight:600;letter-spacing:2px;text-transform:uppercase;">Your OTP Code</p>
+              <p style="margin:0;font-size:48px;font-weight:800;letter-spacing:12px;color:#16A34A;">{otp}</p>
+            </div>
+            <p style="color:#9ca3af;font-size:13px;margin:0;">If you did not request this, you can safely ignore this email.</p>
+          </td>
+        </tr>
+        <tr>
+          <td style="background:#f9fafb;padding:20px 40px;text-align:center;border-top:1px solid #e5e7eb;">
+            <p style="color:#9ca3af;font-size:12px;margin:0;">© 2025 Meta Connect. All rights reserved.</p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body></html>"""
+                params = resend.Emails.SendParams(
+                    from_="Meta Connect <onboarding@resend.dev>",
+                    to=[email],
+                    subject="Your Password Reset OTP - Meta Connect",
+                    html=html_body,
+                )
+                resend.Emails.send(params)
+            else:
+                # Fallback: Django mail (console in dev if no SMTP set)
+                from django.core.mail import send_mail
+                send_mail(
+                    "Your Password Reset OTP - Meta Connect",
+                    f"Your OTP is: {otp}\nValid for 15 minutes.",
+                    'no-reply@metaconnect.app',
+                    [email]
+                )
+            print(f"\n[OTP] Sent {otp} to {email}\n")
             return Response({"message": "OTP sent to your email successfully"})
         except Exception as e:
+            print(f"Email error: {str(e)}")
             return Response({"message": f"Failed to send email: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @method_decorator(csrf_exempt, name='dispatch')
