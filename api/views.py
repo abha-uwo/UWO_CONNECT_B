@@ -5,6 +5,8 @@ from django.contrib.auth import authenticate
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.views import APIView
 from django.http import HttpResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
 from .serializers import RegisterSerializer, UserSerializer, ClientSerializer, AutomationSerializer, WorkflowSerializer, ContactSerializer, TemplateSerializer, CampaignSerializer
 from .models import User, Client, Automation, Message, Workflow, KnowledgeDocument, KnowledgeChunk, Contact, Template, Campaign
 import requests
@@ -12,6 +14,7 @@ import os
 import json
 from .ai_utils import get_ai_response, get_platform_assistance, get_rag_response, get_embedding, chunk_text, find_relevant_chunks
 
+@method_decorator(csrf_exempt, name='dispatch')
 class RegisterView(views.APIView):
     permission_classes = [] 
 
@@ -27,6 +30,7 @@ class RegisterView(views.APIView):
         first_error = next(iter(serializer.errors.values()))[0]
         return Response({"message": str(first_error)}, status=status.HTTP_400_BAD_REQUEST)
 
+@method_decorator(csrf_exempt, name='dispatch')
 class LoginView(views.APIView):
     permission_classes = []
 
@@ -417,9 +421,18 @@ class WhatsAppWebhookView(APIView):
         from .workflow_engine import WorkflowEngine
         
         # 0. Check Workflow Engine first
-        wf_text, wf_buttons = WorkflowEngine.process_workflow(client, to_number, incoming_text)
-        if wf_text:
-            self.send_whatsapp_message(client, to_number, wf_text, phone_number_id, wf_buttons)
+        wf_messages = WorkflowEngine.process_workflow(client, to_number, incoming_text)
+        if wf_messages:
+            for msg in wf_messages:
+                self.send_whatsapp_message(
+                    client=client,
+                    to_number=to_number,
+                    text_body=msg.get('body', ''),
+                    phone_number_id=phone_number_id,
+                    buttons=msg.get('buttons'),
+                    media_url=msg.get('media_url'),
+                    media_type=msg.get('type')
+                )
             return  # Stop further processing if a workflow handled it
 
         automations = Automation.objects.filter(client=client, enabled=True, trigger_type='KEYWORD')
@@ -472,9 +485,9 @@ class WhatsAppWebhookView(APIView):
         if not match_found and client.greeting_enabled and client.greeting_message:
             self.send_whatsapp_message(client, to_number, client.greeting_message, phone_number_id, client.greeting_buttons)
 
-    def send_whatsapp_message(self, client, to_number, text_body, phone_number_id, buttons=None):
+    def send_whatsapp_message(self, client, to_number, text_body, phone_number_id, buttons=None, media_url=None, media_type=None):
         """
-        Calls Meta Graph API to send a text or interactive message
+        Calls Meta Graph API to send a text, interactive, image, or video message
         """
         url = f"https://graph.facebook.com/{os.getenv('WHATSAPP_API_VERSION', 'v19.0')}/{phone_number_id}/messages"
         headers = {
@@ -483,7 +496,22 @@ class WhatsAppWebhookView(APIView):
         }
         
         # Prepare payload
-        if buttons and len(buttons) > 0:
+        if media_url:
+            m_type = media_type
+            if not m_type:
+                m_type = 'video' if any(ext in media_url.lower() for ext in ['.mp4', '.mov', '.avi']) else 'image'
+            
+            payload = {
+                "messaging_product": "whatsapp",
+                "to": to_number,
+                "type": m_type,
+                m_type: {
+                    "link": media_url
+                }
+            }
+            if text_body:
+                payload[m_type]["caption"] = text_body
+        elif buttons and len(buttons) > 0:
             # Construct Interactive Buttons (Max 3)
             buttons_payload = []
             for i, btn_text in enumerate(buttons[:3]):
@@ -501,7 +529,7 @@ class WhatsAppWebhookView(APIView):
                 "type": "interactive",
                 "interactive": {
                     "type": "button",
-                    "body": {"text": text_body},
+                    "body": {"text": text_body or "Select an option:"},
                     "action": {"buttons": buttons_payload}
                 }
             }
@@ -524,7 +552,7 @@ class WhatsAppWebhookView(APIView):
                 channel='WHATSAPP',
                 from_address=phone_number_id,
                 to_address=to_number,
-                body=text_body,
+                body=text_body or f"[{media_type or 'Media'} Message]",
                 message_type='OUTGOING',
                 whatsapp_message_id=res_data.get('messages', [{}])[0].get('id') if 'messages' in res_data else None,
                 status='SENT' if response.status_code == 200 else 'FAILED',
@@ -841,3 +869,101 @@ class CampaignViewSet(viewsets.ModelViewSet):
             campaign = Campaign.objects.get(id=campaign_id)
             campaign.status = 'FAILED'
             campaign.save()
+
+@method_decorator(csrf_exempt, name='dispatch')
+class ForgotPasswordSendOTPView(views.APIView):
+    permission_classes = []
+
+    def post(self, req):
+        import random
+        from django.core.mail import send_mail
+        from .models import PasswordResetOTP
+        
+        email = req.data.get('email', '').lower().strip()
+        if not email:
+            return Response({"message": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check if user exists
+        if not User.objects.filter(email=email).exists():
+            return Response({"message": "User with this email does not exist"}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Generate 6-digit OTP
+        otp = f"{random.randint(100000, 999999)}"
+        
+        # Delete old OTPs for this email
+        PasswordResetOTP.objects.filter(email=email).delete()
+        
+        # Create OTP record
+        PasswordResetOTP.objects.create(email=email, otp=otp)
+        
+        # Send Email
+        try:
+            subject = "Your Password Reset OTP - Meta Connect"
+            message = f"Your OTP for resetting your Meta Connect password is: {otp}.\nThis OTP is valid for 15 minutes."
+            send_mail(subject, message, 'no-reply@metaconnect.app', [email])
+            print(f"\n========================================\n[OTP EMAIL] Sent OTP {otp} to {email}\n========================================\n")
+            return Response({"message": "OTP sent to your email successfully"})
+        except Exception as e:
+            return Response({"message": f"Failed to send email: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class ForgotPasswordVerifyOTPView(views.APIView):
+    permission_classes = []
+
+    def post(self, req):
+        from django.utils import timezone
+        from datetime import timedelta
+        from .models import PasswordResetOTP
+        
+        email = req.data.get('email', '').lower().strip()
+        otp = req.data.get('otp', '').strip()
+        
+        if not email or not otp:
+            return Response({"message": "Email and OTP are required"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Find latest OTP
+        try:
+            otp_record = PasswordResetOTP.objects.filter(email=email, otp=otp).latest('created_at')
+        except PasswordResetOTP.DoesNotExist:
+            return Response({"message": "Invalid OTP"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Check expiration (15 minutes)
+        now = timezone.now()
+        if now - otp_record.created_at > timedelta(minutes=15):
+            otp_record.delete()
+            return Response({"message": "OTP has expired"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        otp_record.is_verified = True
+        otp_record.save()
+        
+        return Response({"message": "OTP verified successfully"})
+
+@method_decorator(csrf_exempt, name='dispatch')
+class ForgotPasswordResetView(views.APIView):
+    permission_classes = []
+
+    def post(self, req):
+        from .models import PasswordResetOTP
+        
+        email = req.data.get('email', '').lower().strip()
+        password = req.data.get('password', '')
+        
+        if not email or not password:
+            return Response({"message": "Email and password are required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Check if verified OTP exists
+        verified_otp = PasswordResetOTP.objects.filter(email=email, is_verified=True).exists()
+        if not verified_otp:
+            return Response({"message": "OTP not verified yet"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Reset password
+        try:
+            user = User.objects.get(email=email)
+            user.set_password(password)
+            user.save()
+            
+            # Delete verified OTP record
+            PasswordResetOTP.objects.filter(email=email).delete()
+            return Response({"message": "Password reset successfully"})
+        except User.DoesNotExist:
+            return Response({"message": "User not found"}, status=status.HTTP_404_NOT_FOUND)
