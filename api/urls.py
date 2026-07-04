@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     RegisterView, LoginView, ClientViewSet, AutomationViewSet, WorkflowViewSet, 
     ContactViewSet, AdminStatsView, AdminAutomationsView, AdminMessagesView, 
-    WhatsAppWebhookView, AdminUsersView, ProfileView, ClientMessagesView, 
+    WhatsAppWebhookView, FacebookInstagramWebhookView, AdminUsersView, ProfileView, ClientMessagesView, 
     GlobalSettingsView, PlatformAssistantView, KnowledgeBaseView, TemplateViewSet, 
     CampaignViewSet, ForgotPasswordSendOTPView, ForgotPasswordVerifyOTPView, ForgotPasswordResetView
 )
@@ -33,6 +33,7 @@ urlpatterns = [
     path('platform-assistant/', PlatformAssistantView.as_view(), name='platform-assistant'),
     path('admin/settings/global', GlobalSettingsView.as_view(), name='global-settings'),
     path('webhook/whatsapp', WhatsAppWebhookView.as_view(), name='whatsapp-webhook'),
+    path('webhook/facebook-instagram', FacebookInstagramWebhookView.as_view(), name='facebook-instagram-webhook'),
     # RAG Knowledge Base
     path('knowledge/', KnowledgeBaseView.as_view(), name='knowledge-base'),
     path('knowledge/<str:pk>/', KnowledgeBaseView.as_view(), name='knowledge-base-detail'),

@@ -1012,3 +1012,238 @@ class ForgotPasswordResetView(views.APIView):
             return Response({"message": "Password reset successfully"})
         except User.DoesNotExist:
             return Response({"message": "User not found"}, status=status.HTTP_404_NOT_FOUND)
+
+class FacebookInstagramWebhookView(APIView):
+    permission_classes = [] # Publicly accessible for Meta webhooks
+
+    def get(self, request):
+        """
+        Meta Webhook Verification (hub.mode = subscribe)
+        """
+        mode = request.query_params.get('hub.mode')
+        token = request.query_params.get('hub.verify_token')
+        challenge = request.query_params.get('hub.challenge')
+        verify_token = os.getenv('WHATSAPP_VERIFY_TOKEN') or 'aisaconnect_secure_token'
+
+        if mode and token:
+            if mode == 'subscribe' and token == verify_token:
+                print("FB/IG WEBHOOK_VERIFIED")
+                return HttpResponse(challenge, content_type="text/plain", status=200)
+            else:
+                return HttpResponse("Forbidden", content_type="text/plain", status=403)
+        return HttpResponse("Bad Request", content_type="text/plain", status=400)
+
+    def post(self, request):
+        """
+        Handles incoming Facebook Page & Instagram events (POST request)
+        """
+        data = request.data
+        print("Incoming FB/IG Webhook Payload:", json.dumps(data, indent=2))
+
+        try:
+            # Facebook/Instagram webhook structure has 'entry'
+            for entry in data.get('entry', []):
+                recipient_id = entry.get('id') # Page ID or Instagram Business Account ID
+                
+                client = None
+                platform = None
+                
+                # Check for Facebook
+                if data.get('object') == 'page':
+                    client = Client.objects.filter(facebook_config__page_id=recipient_id).first()
+                    platform = 'FACEBOOK'
+                # Check for Instagram
+                elif data.get('object') == 'instagram':
+                    client = Client.objects.filter(instagram_config__instagram_business_id=recipient_id).first()
+                    platform = 'INSTAGRAM'
+                
+                if not client:
+                    print(f"No client found for {platform} recipient ID: {recipient_id}")
+                    continue
+
+                if not client.automation_enabled:
+                    print(f"Automation disabled for client: {client.business_name}")
+                    continue
+
+                # Process incoming messages
+                messaging = entry.get('messaging', [])
+                for event in messaging:
+                    sender_id = event.get('sender', {}).get('id')
+                    message = event.get('message', {})
+                    
+                    if not message or 'text' not in message:
+                        continue
+                        
+                    body = message.get('text', '')
+                    
+                    # Ensure Contact exists for CRM
+                    Contact.objects.get_or_create(
+                        client=client,
+                        platform_id=sender_id,
+                        defaults={
+                            'phone_number': sender_id,
+                            'name': f"{platform} User",
+                            'stage': 'NEW'
+                        }
+                    )
+
+                    # Log the message in our database
+                    Message.objects.create(
+                        client=client,
+                        channel=platform,
+                        from_address=sender_id,
+                        to_address=recipient_id,
+                        body=body,
+                        message_type='INCOMING',
+                        status='RECEIVED',
+                        metadata=event
+                    )
+
+                    # Trigger automations
+                    if body:
+                        self.handle_automations(client, platform, sender_id, body)
+
+            return Response({"status": "success"}, status=status.HTTP_200_OK)
+        except Exception as e:
+            print(f"Error processing FB/IG webhook: {str(e)}")
+            return Response({"status": "error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    def handle_automations(self, client, platform, sender_id, incoming_text):
+        """
+        Matches keywords and sends automated responses.
+        If no keyword matches, sends the Global Greeting Message if enabled.
+        """
+        from .workflow_engine import WorkflowEngine
+        
+        # 0. Check Workflow Engine first
+        wf_messages = WorkflowEngine.process_workflow(client, sender_id, incoming_text, platform)
+        if wf_messages:
+            for msg in wf_messages:
+                self.send_message(
+                    client=client,
+                    platform=platform,
+                    recipient_id=sender_id,
+                    text_body=msg.get('body', ''),
+                    buttons=msg.get('buttons'),
+                    media_url=msg.get('media_url'),
+                    media_type=msg.get('type')
+                )
+            return  # Stop further processing if a workflow handled it
+
+        # 1. Try Keyword Matching
+        automations = Automation.objects.filter(client=client, enabled=True, trigger_type='KEYWORD')
+        incoming_text_lower = incoming_text.lower().strip()
+        
+        match_found = False
+        for auto in automations:
+            # Check channels list
+            auto_channels = auto.channels or []
+            if len(auto_channels) > 0 and platform not in auto_channels:
+                continue
+            if len(auto_channels) == 0 and platform != 'WHATSAPP':
+                continue
+
+            if auto.keywords:
+                for keyword in auto.keywords:
+                    if keyword.lower().strip() == incoming_text_lower:
+                        self.send_message(client, platform, sender_id, auto.response, auto.buttons)
+                        match_found = True
+                        break
+            if match_found: break
+
+        # 2. Check AI Assistant
+        if not match_found and client.ai_enabled:
+            ai_reply = None
+            chunks = KnowledgeChunk.objects.filter(client=client).exclude(embedding=[])
+            if chunks.exists():
+                query_embedding = get_embedding(incoming_text)
+                if query_embedding:
+                    chunks_data = [{
+                        'text': c.chunk_text,
+                        'embedding': c.embedding,
+                        'doc_title': c.document.title
+                    } for c in chunks.select_related('document')]
+                    relevant = find_relevant_chunks(query_embedding, chunks_data, top_k=5)
+                    if relevant and relevant[0]['score'] > 0.3:
+                        ai_reply = get_rag_response(incoming_text, relevant)
+            
+            if not ai_reply:
+                ai_reply = get_ai_response(incoming_text, client.ai_context or "")
+                
+            if ai_reply:
+                self.send_message(client, platform, sender_id, ai_reply)
+                match_found = True
+
+        # 3. Check Greeting Message
+        if not match_found and client.greeting_enabled and client.greeting_message:
+            self.send_message(client, platform, sender_id, client.greeting_message, client.greeting_buttons)
+
+    def send_message(self, client, platform, recipient_id, text_body, buttons=None, media_url=None, media_type=None):
+        """
+        Calls Meta Graph API to send message to Facebook Page or Instagram Business Account
+        """
+        config = client.facebook_config if platform == 'FACEBOOK' else client.instagram_config
+        access_token = config.get('access_token') or client.whatsapp_access_token
+        
+        if not access_token:
+            print(f"No access token found for {platform} messaging")
+            return
+            
+        url = "https://graph.facebook.com/v20.0/me/messages"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
+        
+        message_payload = {}
+        if media_url:
+            m_type = media_type or 'image'
+            if not media_type:
+                m_type = 'video' if any(ext in media_url.lower() for ext in ['.mp4', '.mov', '.avi']) else 'image'
+            message_payload = {
+                "attachment": {
+                    "type": m_type,
+                    "payload": {
+                        "url": media_url,
+                        "is_reusable": True
+                    }
+                }
+            }
+        elif buttons and len(buttons) > 0:
+            quick_replies = []
+            for btn in buttons[:13]:
+                quick_replies.append({
+                    "content_type": "text",
+                    "title": btn[:20],
+                    "payload": btn
+                })
+            message_payload = {
+                "text": text_body or "Please choose an option:",
+                "quick_replies": quick_replies
+            }
+        else:
+            message_payload = {
+                "text": text_body
+            }
+            
+        payload = {
+            "recipient": {"id": recipient_id},
+            "message": message_payload
+        }
+        
+        try:
+            res = requests.post(url, json=payload, headers=headers)
+            print(f"{platform} Send Response:", res.status_code, res.text)
+            
+            # Log OUTGOING message
+            Message.objects.create(
+                client=client,
+                channel=platform,
+                from_address='SYSTEM',
+                to_address=recipient_id,
+                body=text_body or f"[{media_type or 'Attachment'}]",
+                message_type='OUTGOING',
+                status='SENT'
+            )
+        except Exception as e:
+            print(f"Failed to send {platform} message:", str(e))

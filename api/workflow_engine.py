@@ -3,7 +3,7 @@ import json
 
 class WorkflowEngine:
     @staticmethod
-    def process_workflow(client, phone_number, incoming_text):
+    def process_workflow(client, phone_number, incoming_text, channel='WHATSAPP'):
         """
         Process the incoming text to advance an active workflow session,
         or start a new workflow session if a trigger matches.
@@ -19,6 +19,7 @@ class WorkflowEngine:
         Or returns None if no workflow logic applies.
         """
         incoming_text_lower = incoming_text.lower().strip()
+        channel_upper = channel.upper()
 
         # 1. Check for active session
         session = WorkflowSession.objects.filter(
@@ -28,12 +29,27 @@ class WorkflowEngine:
         ).first()
 
         if session:
-            # Advance the existing session
-            return WorkflowEngine._advance_session(session, incoming_text)
+            # Check if session's workflow matches the incoming channel
+            wf_channels = session.workflow.channels or []
+            is_match = False
+            if len(wf_channels) > 0 and channel_upper in wf_channels:
+                is_match = True
+            elif len(wf_channels) == 0 and channel_upper == 'WHATSAPP':
+                is_match = True
+            
+            if is_match:
+                # Advance the existing session
+                return WorkflowEngine._advance_session(session, incoming_text)
 
         # 2. Check for new workflow triggers
         workflows = Workflow.objects.filter(client=client, enabled=True, trigger_type='KEYWORD')
         for wf in workflows:
+            wf_channels = wf.channels or []
+            if len(wf_channels) > 0 and channel_upper not in wf_channels:
+                continue
+            if len(wf_channels) == 0 and channel_upper != 'WHATSAPP':
+                continue
+
             if isinstance(wf.trigger_value, list):
                 # Ensure lowercase comparison
                 trigger_keywords = [t.lower().strip() for t in wf.trigger_value if isinstance(t, str)]

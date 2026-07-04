@@ -89,6 +89,11 @@ class Workflow(models.Model):
     trigger_type = models.CharField(max_length=20, choices=TRIGGER_CHOICES, default='KEYWORD')
     trigger_value = models.JSONField(default=list, blank=True)
     steps = models.JSONField(default=list)  # List of step dicts
+    channels = models.JSONField(default=list, blank=True)  # e.g., ["WHATSAPP"]
+    category = models.CharField(max_length=100, default='General')
+    industry = models.CharField(max_length=100, default='None')
+    version = models.CharField(max_length=20, default='1.0')
+    is_shared = models.BooleanField(default=False)
     enabled = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
