@@ -3,16 +3,41 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.decorators import action
 from rest_framework.views import APIView
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
-from .serializers import RegisterSerializer, UserSerializer, ClientSerializer, AutomationSerializer, WorkflowSerializer, ContactSerializer, TemplateSerializer, CampaignSerializer
-from .models import User, Client, Automation, Message, Workflow, KnowledgeDocument, KnowledgeChunk, Contact, Template, Campaign
+from .serializers import RegisterSerializer, UserSerializer, ClientSerializer, AutomationSerializer, WorkflowSerializer, ContactSerializer, TemplateSerializer, CampaignSerializer, SupportMessageSerializer, AuditLogSerializer
+from .models import User, Client, Automation, Message, Workflow, KnowledgeDocument, KnowledgeChunk, Contact, Template, Campaign, SupportMessage, AuditLog
 import requests
 import os
 import json
 from .ai_utils import get_ai_response, get_platform_assistance, get_rag_response, get_embedding, chunk_text, find_relevant_chunks
+from rest_framework.permissions import BasePermission
+
+def get_tenant_client(request):
+    if not request.user or not request.user.is_authenticated:
+        return None
+    if request.user.role == 'ADMIN':
+        client_id = request.query_params.get('client_id') or request.data.get('client_id')
+        if client_id:
+            try:
+                return Client.objects.get(id=client_id)
+            except (Client.DoesNotExist, ValueError):
+                pass
+        return None
+    return request.user.client
+
+class IsApprovedUser(BasePermission):
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        if request.user.role == 'CLIENT':
+            if request.user.client and request.user.client.status != 'ACTIVE':
+                return False
+            return request.user.status == 'APPROVED'
+        return True
 
 @method_decorator(csrf_exempt, name='dispatch')
 class RegisterView(views.APIView):
@@ -94,42 +119,160 @@ class LoginView(views.APIView):
 class ClientViewSet(viewsets.ModelViewSet):
     queryset = Client.objects.all()
     serializer_class = ClientSerializer
-    permission_classes = [IsAuthenticated] # Clients can view their own, Admins view all
+    permission_classes = [IsApprovedUser]
 
     def get_queryset(self):
         if self.request.user.role == 'ADMIN':
             return Client.objects.all()
         return Client.objects.filter(id=self.request.user.client_id)
 
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    def suspend(self, request, pk=None):
+        client = self.get_object()
+        before_status = client.status
+        client.status = 'SUSPENDED'
+        client.save()
+        User.objects.filter(client=client).update(status='SUSPENDED')
+        log_admin_action(request, client, 'Client Management', 'SUSPEND_CLIENT', before_value=before_status, after_value='SUSPENDED')
+        return Response({"status": "suspended"})
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    def reactivate(self, request, pk=None):
+        client = self.get_object()
+        before_status = client.status
+        client.status = 'ACTIVE'
+        client.save()
+        User.objects.filter(client=client).update(status='APPROVED')
+        log_admin_action(request, client, 'Client Management', 'REACTIVATE_CLIENT', before_value=before_status, after_value='ACTIVE')
+        return Response({"status": "active"})
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    def disconnect_meta(self, request, pk=None):
+        client = self.get_object()
+        before_val = f"Token ID: {client.whatsapp_phone_number_id}"
+        client.whatsapp_access_token = None
+        client.whatsapp_phone_number_id = None
+        client.whatsapp_waba_id = None
+        client.facebook_enabled = False
+        client.instagram_enabled = False
+        client.facebook_config = {}
+        client.instagram_config = {}
+        client.save()
+        log_admin_action(request, client, 'Integrations', 'DISCONNECT_META', before_value=before_val, after_value="Disconnected")
+        return Response({"status": "disconnected"})
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    def reset_ai(self, request, pk=None):
+        client = self.get_object()
+        before_val = f"AI Context: {client.ai_context}"
+        client.ai_enabled = False
+        client.ai_context = None
+        client.save()
+        log_admin_action(request, client, 'AI Settings', 'RESET_AI_SETTINGS', before_value=before_val, after_value="Reset")
+        return Response({"status": "reset"})
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    def reset_workflows(self, request, pk=None):
+        client = self.get_object()
+        count = Workflow.objects.filter(client=client).count()
+        Workflow.objects.filter(client=client).delete()
+        log_admin_action(request, client, 'Workflows', 'RESET_WORKFLOWS', before_value=f"Total: {count}", after_value="0 Workflows")
+        return Response({"status": "reset"})
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminUser])
+    def toggle_feature(self, request, pk=None):
+        client = self.get_object()
+        feature = request.data.get('feature')
+        if not feature:
+            return Response({"error": "Feature name is required"}, status=400)
+        
+        if not isinstance(client.settings, dict):
+            client.settings = {}
+            
+        before_val = client.settings.get(feature, False)
+        target_val = not before_val
+        client.settings[feature] = target_val
+        client.save()
+        log_admin_action(request, client, 'Override Settings', f'TOGGLE_{feature.upper()}', before_value=str(before_val), after_value=str(target_val))
+        return Response({"status": "toggled", "value": target_val})
+
 class AutomationViewSet(viewsets.ModelViewSet):
     serializer_class = AutomationSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsApprovedUser]
 
     def get_queryset(self):
-        return Automation.objects.filter(client=self.request.user.client)
+        client = get_tenant_client(self.request)
+        if self.request.user.role == 'ADMIN' and not client:
+            return Automation.objects.none()
+        return Automation.objects.filter(client=client)
 
     def perform_create(self, serializer):
-        serializer.save(client=self.request.user.client)
+        client = get_tenant_client(self.request)
+        instance = serializer.save(client=client)
+        log_admin_action(self.request, instance, 'Automations', 'CREATE', after_value=str(serializer.data))
+
+    def perform_update(self, serializer):
+        before_instance = self.get_object()
+        before_data = str(self.get_serializer(before_instance).data)
+        instance = serializer.save()
+        log_admin_action(self.request, instance, 'Automations', 'UPDATE', before_value=before_data, after_value=str(serializer.data))
+
+    def perform_destroy(self, instance):
+        before_data = str(self.get_serializer(instance).data)
+        log_admin_action(self.request, instance, 'Automations', 'DELETE', before_value=before_data)
+        instance.delete()
 
 class WorkflowViewSet(viewsets.ModelViewSet):
     serializer_class = WorkflowSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsApprovedUser]
 
     def get_queryset(self):
-        return Workflow.objects.filter(client=self.request.user.client)
+        client = get_tenant_client(self.request)
+        if self.request.user.role == 'ADMIN' and not client:
+            return Workflow.objects.none()
+        return Workflow.objects.filter(client=client)
 
     def perform_create(self, serializer):
-        serializer.save(client=self.request.user.client)
+        client = get_tenant_client(self.request)
+        instance = serializer.save(client=client)
+        log_admin_action(self.request, instance, 'Workflows', 'CREATE', after_value=str(serializer.data))
+
+    def perform_update(self, serializer):
+        before_instance = self.get_object()
+        before_data = str(self.get_serializer(before_instance).data)
+        instance = serializer.save()
+        log_admin_action(self.request, instance, 'Workflows', 'UPDATE', before_value=before_data, after_value=str(serializer.data))
+
+    def perform_destroy(self, instance):
+        before_data = str(self.get_serializer(instance).data)
+        log_admin_action(self.request, instance, 'Workflows', 'DELETE', before_value=before_data)
+        instance.delete()
 
 class ContactViewSet(viewsets.ModelViewSet):
     serializer_class = ContactSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsApprovedUser]
 
     def get_queryset(self):
-        return Contact.objects.filter(client=self.request.user.client)
+        client = get_tenant_client(self.request)
+        if self.request.user.role == 'ADMIN' and not client:
+            return Contact.objects.none()
+        return Contact.objects.filter(client=client)
 
     def perform_create(self, serializer):
-        serializer.save(client=self.request.user.client)
+        client = get_tenant_client(self.request)
+        instance = serializer.save(client=client)
+        log_admin_action(self.request, instance, 'Contacts', 'CREATE', after_value=str(serializer.data))
+
+    def perform_update(self, serializer):
+        before_instance = self.get_object()
+        before_data = str(self.get_serializer(before_instance).data)
+        instance = serializer.save()
+        log_admin_action(self.request, instance, 'Contacts', 'UPDATE', before_value=before_data, after_value=str(serializer.data))
+
+    def perform_destroy(self, instance):
+        before_data = str(self.get_serializer(instance).data)
+        log_admin_action(self.request, instance, 'Contacts', 'DELETE', before_value=before_data)
+        instance.delete()
 
 class ProfileView(APIView):
     permission_classes = [IsAuthenticated]
@@ -176,6 +319,26 @@ class AdminStatsView(APIView):
             "totalClients": Client.objects.count(),
             "activeAutomations": Automation.objects.filter(enabled=True).count(),
             "totalWorkflows": Workflow.objects.count(),
+        })
+
+class ClientStatsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        client = request.user.client
+        if not client:
+            return Response({"error": "No client associated"}, status=400)
+            
+        total_conversations = Message.objects.filter(client=client).values('from_address', 'to_address').distinct().count()
+        automation_runs = Message.objects.filter(client=client, message_type='OUTGOING', status='SENT').count()
+        active_users = Contact.objects.filter(client=client).count()
+        
+        # Avg. response time or custom defaults
+        return Response({
+            "totalConversations": total_conversations,
+            "automationRuns": automation_runs,
+            "activeUsers": active_users,
+            "avgResponse": "14s"
         })
 
 class GlobalSettingsView(APIView):
@@ -309,6 +472,31 @@ class AdminUsersView(APIView):
         except User.DoesNotExist:
             return Response({"message": "User not found."}, status=404)
 
+    def delete(self, request, pk=None):
+        # ── Delete a single user by pk ──────────────────────────────
+        if pk:
+            try:
+                user = User.objects.get(pk=pk, role='CLIENT')
+                if user.client:
+                    user.client.delete()   # cascade removes Client data
+                user.delete()
+                return Response({"message": "User deleted successfully."})
+            except User.DoesNotExist:
+                return Response({"message": "User not found."}, status=404)
+
+        # ── Delete ALL client users ─────────────────────────────────
+        delete_all = request.query_params.get('delete_all', '').lower()
+        if delete_all == 'true':
+            # Delete all associated Client objects first (cascade)
+            Client.objects.all().delete()
+            deleted_count, _ = User.objects.filter(role='CLIENT').delete()
+            return Response({
+                "message": f"All {deleted_count} client users deleted successfully."
+            })
+
+        return Response({"message": "Provide a user pk or ?delete_all=true"}, status=400)
+
+
 class WhatsAppWebhookView(APIView):
     permission_classes = [] # Publicly accessible for Meta webhooks
 
@@ -381,7 +569,7 @@ class WhatsAppWebhookView(APIView):
                             
                             
                             # Ensure Contact exists for CRM
-                            Contact.objects.get_or_create(
+                            contact, _ = Contact.objects.get_or_create(
                                 client=client,
                                 platform_id=from_number,
                                 defaults={
@@ -406,7 +594,10 @@ class WhatsAppWebhookView(APIView):
 
                             # Handle Automations with the extracted text
                             if body:
-                                self.handle_automations(client, from_number, body, phone_number_id)
+                                if not contact.bot_paused:
+                                    self.handle_automations(client, from_number, body, phone_number_id)
+                                else:
+                                    print(f"Bot paused for contact {from_number}. No automated response.")
 
             return Response({"status": "success"}, status=status.HTTP_200_OK)
         except Exception as e:
@@ -566,10 +757,11 @@ class ClientMessagesView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        if not request.user.client:
+        client = get_tenant_client(request)
+        if not client:
             return Response([])
         
-        messages = Message.objects.filter(client=request.user.client).order_by('-created_at')[:100]
+        messages = Message.objects.filter(client=client).order_by('-created_at')[:100]
         data = []
         for msg in messages:
             data.append({
@@ -585,7 +777,7 @@ class ClientMessagesView(APIView):
         return Response(data)
 
     def post(self, request):
-        client = request.user.client
+        client = get_tenant_client(request)
         if not client:
             return Response({"error": "No client associated"}, status=400)
             
@@ -626,9 +818,10 @@ class KnowledgeBaseView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        if not request.user.client:
+        client = get_tenant_client(request)
+        if not client:
             return Response([], status=200)
-        docs = KnowledgeDocument.objects.filter(client=request.user.client).order_by('-created_at')
+        docs = KnowledgeDocument.objects.filter(client=client).order_by('-created_at')
         data = []
         for doc in docs:
             chunk_count = doc.chunks.count()
@@ -648,7 +841,8 @@ class KnowledgeBaseView(APIView):
         return Response(data)
 
     def post(self, request):
-        if not request.user.client:
+        client = get_tenant_client(request)
+        if not client:
             return Response({"message": "No client associated"}, status=400)
 
         file = request.FILES.get('file')
@@ -672,6 +866,7 @@ class KnowledgeBaseView(APIView):
         extracted_text = ""
         try:
             if ext == 'pdf':
+                # pyrefly: ignore [missing-import]
                 import PyPDF2
                 pdf_reader = PyPDF2.PdfReader(file)
                 for page in pdf_reader.pages:
@@ -693,9 +888,8 @@ class KnowledgeBaseView(APIView):
         if not extracted_text.strip():
             return Response({"message": "No readable text found in the file. Please check the file content."}, status=400)
 
-        # === STEP 2: Save document ===
         knowledge_doc = KnowledgeDocument.objects.create(
-            client=request.user.client,
+            client=client,
             title=title,
             extracted_text=extracted_text.strip(),
             file_type=ext,
@@ -714,7 +908,7 @@ class KnowledgeBaseView(APIView):
             embedding = get_embedding(chunk_content)
             KnowledgeChunk.objects.create(
                 document=knowledge_doc,
-                client=request.user.client,
+                client=client,
                 chunk_text=chunk_content,
                 chunk_index=i,
                 embedding=embedding if embedding else [],
@@ -739,10 +933,11 @@ class KnowledgeBaseView(APIView):
         }, status=201)
 
     def delete(self, request, pk):
-        if not request.user.client:
+        client = get_tenant_client(request)
+        if not client:
             return Response({"message": "No client associated"}, status=400)
         try:
-            doc = KnowledgeDocument.objects.get(id=pk, client=request.user.client)
+            doc = KnowledgeDocument.objects.get(id=pk, client=client)
             # Chunks auto-delete via CASCADE
             doc.delete()
             return Response({"message": "Document and all chunks deleted successfully"}, status=200)
@@ -759,10 +954,29 @@ import threading
 
 class TemplateViewSet(viewsets.ModelViewSet):
     serializer_class = TemplateSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsApprovedUser]
 
     def get_queryset(self):
-        return Template.objects.filter(client=self.request.user.client)
+        client = get_tenant_client(self.request)
+        if self.request.user.role == 'ADMIN' and not client:
+            return Template.objects.none()
+        return Template.objects.filter(client=client)
+
+    def perform_create(self, serializer):
+        client = get_tenant_client(self.request)
+        instance = serializer.save(client=client)
+        log_admin_action(self.request, instance, 'Templates', 'CREATE', after_value=str(serializer.data))
+
+    def perform_update(self, serializer):
+        before_instance = self.get_object()
+        before_data = str(self.get_serializer(before_instance).data)
+        instance = serializer.save()
+        log_admin_action(self.request, instance, 'Templates', 'UPDATE', before_value=before_data, after_value=str(serializer.data))
+
+    def perform_destroy(self, instance):
+        before_data = str(self.get_serializer(instance).data)
+        log_admin_action(self.request, instance, 'Templates', 'DELETE', before_value=before_data)
+        instance.delete()
 
     @action(detail=False, methods=['post'])
     def sync_from_meta(self, request):
@@ -799,17 +1013,32 @@ class TemplateViewSet(viewsets.ModelViewSet):
 
 class CampaignViewSet(viewsets.ModelViewSet):
     serializer_class = CampaignSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsApprovedUser]
 
     def get_queryset(self):
-        return Campaign.objects.filter(client=self.request.user.client).order_by('-created_at')
+        client = get_tenant_client(self.request)
+        if self.request.user.role == 'ADMIN' and not client:
+            return Campaign.objects.none()
+        return Campaign.objects.filter(client=client).order_by('-created_at')
 
     def perform_create(self, serializer):
-        campaign = serializer.save(client=self.request.user.client, status='SENDING')
+        client = get_tenant_client(self.request)
+        campaign = serializer.save(client=client, status='SENDING')
+        log_admin_action(self.request, campaign, 'Campaigns', 'CREATE', after_value=str(serializer.data))
         
-        # Start background thread to process campaign
         thread = threading.Thread(target=self.process_campaign, args=(campaign.id,))
         thread.start()
+
+    def perform_update(self, serializer):
+        before_instance = self.get_object()
+        before_data = str(self.get_serializer(before_instance).data)
+        instance = serializer.save()
+        log_admin_action(self.request, instance, 'Campaigns', 'UPDATE', before_value=before_data, after_value=str(serializer.data))
+
+    def perform_destroy(self, instance):
+        before_data = str(self.get_serializer(instance).data)
+        log_admin_action(self.request, instance, 'Campaigns', 'DELETE', before_value=before_data)
+        instance.delete()
 
     def process_campaign(self, campaign_id):
         try:
@@ -1077,7 +1306,7 @@ class FacebookInstagramWebhookView(APIView):
                     body = message.get('text', '')
                     
                     # Ensure Contact exists for CRM
-                    Contact.objects.get_or_create(
+                    contact, _ = Contact.objects.get_or_create(
                         client=client,
                         platform_id=sender_id,
                         defaults={
@@ -1101,7 +1330,10 @@ class FacebookInstagramWebhookView(APIView):
 
                     # Trigger automations
                     if body:
-                        self.handle_automations(client, platform, sender_id, body)
+                        if not contact.bot_paused:
+                            self.handle_automations(client, platform, sender_id, body)
+                        else:
+                            print(f"Bot paused for {platform} contact {sender_id}. No automated response.")
 
             return Response({"status": "success"}, status=status.HTTP_200_OK)
         except Exception as e:
@@ -1247,3 +1479,168 @@ class FacebookInstagramWebhookView(APIView):
             )
         except Exception as e:
             print(f"Failed to send {platform} message:", str(e))
+
+def log_admin_action(request, instance, module, action, before_value=None, after_value=None):
+    auth_data = getattr(request, 'auth', None)
+    impersonator_username = None
+    if auth_data:
+        try:
+            impersonator_username = auth_data.get('impersonator_username')
+        except AttributeError:
+            if hasattr(auth_data, 'payload'):
+                impersonator_username = auth_data.payload.get('impersonator_username')
+            elif isinstance(auth_data, dict):
+                impersonator_username = auth_data.get('impersonator_username')
+                
+    if not impersonator_username and request.user.is_authenticated and request.user.role == 'ADMIN':
+        impersonator_username = request.user.username
+        
+    if impersonator_username:
+        client = getattr(instance, 'client', None)
+        if not client and isinstance(instance, Client):
+            client = instance
+        client_name = client.business_name if client else "Global / Platform"
+        
+        ip_addr = request.META.get('REMOTE_ADDR')
+        
+        AuditLog.objects.create(
+            admin_name=impersonator_username,
+            client_name=client_name,
+            module=module,
+            action=action,
+            before_value=before_value,
+            after_value=after_value,
+            ip_address=ip_addr
+        )
+
+class AuditLogMixin:
+    def get_module_name(self):
+        model = None
+        if hasattr(self, 'queryset') and self.queryset:
+            model = self.queryset.model
+        elif hasattr(self, 'get_queryset'):
+            try:
+                model = self.get_queryset().model
+            except Exception:
+                pass
+        return model.__name__ if model else "General"
+
+    def perform_create(self, serializer):
+        instance = serializer.save()
+        log_admin_action(self.request, instance, self.get_module_name(), 'CREATE', after_value=str(serializer.data))
+        
+    def perform_update(self, serializer):
+        before_instance = self.get_object()
+        before_data = str(self.get_serializer(before_instance).data)
+        instance = serializer.save()
+        log_admin_action(self.request, instance, self.get_module_name(), 'UPDATE', before_value=before_data, after_value=str(serializer.data))
+        
+    def perform_destroy(self, instance):
+        before_data = str(self.get_serializer(instance).data)
+        log_admin_action(self.request, instance, self.get_module_name(), 'DELETE', before_value=before_data)
+        instance.delete()
+
+class SupportMessageViewSet(viewsets.ModelViewSet):
+    serializer_class = SupportMessageSerializer
+    permission_classes = [IsApprovedUser]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.role == 'ADMIN':
+            client_id = self.request.query_params.get('client_id')
+            if client_id:
+                try:
+                    client = Client.objects.get(id=client_id)
+                    return SupportMessage.objects.filter(client=client)
+                except Exception:
+                    return SupportMessage.objects.none()
+            return SupportMessage.objects.all()
+        return SupportMessage.objects.filter(client=user.client)
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        if user.role == 'ADMIN':
+            client_id = self.request.data.get('client_id')
+            if not client_id:
+                raise serializers.ValidationError({"client_id": "Required when sending as admin."})
+            client = Client.objects.get(id=client_id)
+        else:
+            client = user.client
+        serializer.save(sender=user, client=client)
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAdminUser])
+    def clients(self, request):
+        from django.db.models import Max
+        client_ids = SupportMessage.objects.values('client').annotate(latest_message=Max('created_at')).order_by('-latest_message')
+        
+        clients_data = []
+        for item in client_ids:
+            client_id = item['client']
+            client = Client.objects.filter(id=client_id).first()
+            if client:
+                last_msg = SupportMessage.objects.filter(client=client).order_by('-created_at').first()
+                clients_data.append({
+                    "id": str(client.id),
+                    "business_name": client.business_name,
+                    "last_message_body": last_msg.body if last_msg else "",
+                    "last_message_time": last_msg.created_at if last_msg else None,
+                    "unread_count": 0
+                })
+        return Response(clients_data)
+
+class AdminImpersonateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role != 'ADMIN':
+            return Response({"error": "Only admins can impersonate clients."}, status=status.HTTP_403_FORBIDDEN)
+            
+        client_id = request.data.get('client_id')
+        if not client_id:
+            return Response({"error": "client_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            client = Client.objects.get(id=client_id)
+            user = User.objects.filter(client=client, role='CLIENT').first()
+            if not user:
+                return Response({"error": "No user registered under this client node to impersonate."}, status=status.HTTP_404_NOT_FOUND)
+                
+            refresh = RefreshToken.for_user(user)
+            refresh['impersonator_id'] = str(request.user.id)
+            refresh['impersonator_username'] = request.user.username
+            return Response({
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "user": {
+                    "username": user.username,
+                    "email": user.email,
+                    "role": user.role
+                }
+            })
+        except Client.DoesNotExist:
+            return Response({"error": "Client node not found."}, status=status.HTTP_404_NOT_FOUND)
+
+class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = AuditLog.objects.all()
+    serializer_class = AuditLogSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        if self.request.user.role != 'ADMIN':
+            return AuditLog.objects.none()
+            
+        queryset = AuditLog.objects.all()
+        search = self.request.query_params.get('search')
+        if search:
+            from django.db.models import Q
+            queryset = queryset.filter(
+                Q(admin_name__icontains=search) |
+                Q(client_name__icontains=search) |
+                Q(module__icontains=search) |
+                Q(action__icontains=search)
+            )
+        module = self.request.query_params.get('module')
+        if module:
+            queryset = queryset.filter(module=module)
+            
+        return queryset

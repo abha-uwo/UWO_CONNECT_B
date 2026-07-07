@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, Client, Automation, Workflow, GlobalSetting, Contact, Template, Campaign
+from .models import User, Client, Automation, Workflow, GlobalSetting, Contact, Template, Campaign, SupportMessage, AuditLog
 
 
 class ObjectIdField(serializers.Field):
@@ -15,9 +15,11 @@ class ObjectIdField(serializers.Field):
 
 
 class ClientSerializer(serializers.ModelSerializer):
-    # Expose id as both 'id' and '_id' as strings (for frontend compatibility)
     id = ObjectIdField(read_only=True)
     _id = serializers.SerializerMethodField()
+    total_contacts = serializers.SerializerMethodField()
+    total_workflows = serializers.SerializerMethodField()
+    total_bots = serializers.SerializerMethodField()
 
     class Meta:
         model = Client
@@ -25,6 +27,18 @@ class ClientSerializer(serializers.ModelSerializer):
 
     def get__id(self, obj):
         return str(obj.id)
+
+    def get_total_contacts(self, obj):
+        from .models import Contact
+        return Contact.objects.filter(client=obj).count()
+
+    def get_total_workflows(self, obj):
+        from .models import Workflow
+        return Workflow.objects.filter(client=obj).count()
+
+    def get_total_bots(self, obj):
+        from .models import Automation
+        return Automation.objects.filter(client=obj).count()
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -122,3 +136,22 @@ class CampaignSerializer(serializers.ModelSerializer):
         model = Campaign
         fields = '__all__'
         read_only_fields = ('client', 'created_at', 'updated_at')
+
+class SupportMessageSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    client = ObjectIdField(read_only=True)
+    sender = ObjectIdField(read_only=True)
+    sender_name = serializers.ReadOnlyField(source='sender.username')
+    sender_role = serializers.ReadOnlyField(source='sender.role')
+
+    class Meta:
+        model = SupportMessage
+        fields = '__all__'
+        read_only_fields = ('sender', 'client')
+
+class AuditLogSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+
+    class Meta:
+        model = AuditLog
+        fields = '__all__'

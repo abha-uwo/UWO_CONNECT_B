@@ -163,6 +163,19 @@ class WorkflowEngine:
                     session.save()
                     break
 
+            elif node_type == 'handoff':
+                messages_to_send.append(WorkflowEngine._format_node_response(current_node))
+                
+                # Pause bot for this contact
+                if contact:
+                    contact.bot_paused = True
+                    contact.save()
+                
+                # End workflow session
+                session.is_active = False
+                session.save()
+                break
+
             elif node_type in ['plain', 'default', 'image', 'video', 'buttons']:
                 messages_to_send.append(WorkflowEngine._format_node_response(current_node))
                 
@@ -231,7 +244,7 @@ class WorkflowEngine:
         data = node.get('data', {})
         
         node_type_clean = node_type
-        if node_type_clean in ['plain', 'default']:
+        if node_type_clean in ['plain', 'default', 'handoff']:
             node_type_clean = 'text'
 
         res = {

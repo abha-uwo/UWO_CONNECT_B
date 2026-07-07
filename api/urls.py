@@ -2,10 +2,11 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     RegisterView, LoginView, ClientViewSet, AutomationViewSet, WorkflowViewSet, 
-    ContactViewSet, AdminStatsView, AdminAutomationsView, AdminMessagesView, 
+    ContactViewSet, AdminStatsView, ClientStatsView, AdminAutomationsView, AdminMessagesView, 
     WhatsAppWebhookView, FacebookInstagramWebhookView, AdminUsersView, ProfileView, ClientMessagesView, 
     GlobalSettingsView, PlatformAssistantView, KnowledgeBaseView, TemplateViewSet, 
-    CampaignViewSet, ForgotPasswordSendOTPView, ForgotPasswordVerifyOTPView, ForgotPasswordResetView
+    CampaignViewSet, ForgotPasswordSendOTPView, ForgotPasswordVerifyOTPView, ForgotPasswordResetView,
+    SupportMessageViewSet, AdminImpersonateView, AuditLogViewSet
 )
 
 router = DefaultRouter()
@@ -15,6 +16,8 @@ router.register(r'workflows', WorkflowViewSet, basename='workflow')
 router.register(r'contacts', ContactViewSet, basename='contact')
 router.register(r'templates', TemplateViewSet, basename='template')
 router.register(r'campaigns', CampaignViewSet, basename='campaign')
+router.register(r'support/messages', SupportMessageViewSet, basename='support-message')
+router.register(r'audit-logs', AuditLogViewSet, basename='audit-log')
 
 urlpatterns = [
     path('', include(router.urls)),
@@ -25,6 +28,7 @@ urlpatterns = [
     path('auth/forgot-password/reset', ForgotPasswordResetView.as_view(), name='forgot-password-reset'),
     path('profile', ProfileView.as_view(), name='profile'),
     path('messages/', ClientMessagesView.as_view(), name='client-messages'),
+    path('client/stats', ClientStatsView.as_view(), name='client-stats'),
     path('admin/stats', AdminStatsView.as_view(), name='admin-stats'),
     path('admin/automations', AdminAutomationsView.as_view(), name='admin-automations'),
     path('admin/messages', AdminMessagesView.as_view(), name='admin-messages'),
@@ -37,4 +41,5 @@ urlpatterns = [
     # RAG Knowledge Base
     path('knowledge/', KnowledgeBaseView.as_view(), name='knowledge-base'),
     path('knowledge/<str:pk>/', KnowledgeBaseView.as_view(), name='knowledge-base-detail'),
+    path('admin/impersonate', AdminImpersonateView.as_view(), name='admin-impersonate'),
 ]

@@ -2,9 +2,21 @@ from django.db import models
 from django.contrib.auth.models import AbstractUser
 
 class Client(models.Model):
+    PLAN_CHOICES = [
+        ('FREE', 'Free'),
+        ('GROWTH', 'Growth'),
+        ('ENTERPRISE', 'Enterprise'),
+    ]
+    STATUS_CHOICES = [
+        ('ACTIVE', 'Active'),
+        ('SUSPENDED', 'Suspended'),
+        ('TRIAL', 'Trial'),
+    ]
     business_name = models.CharField(max_length=255)
     phone_number = models.CharField(max_length=50, null=True, blank=True)
     automation_enabled = models.BooleanField(default=True)
+    plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default='FREE')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='ACTIVE')
     
     # Enablement Flags
     facebook_enabled = models.BooleanField(default=False)
@@ -210,6 +222,7 @@ class Contact(models.Model):
     stage = models.CharField(max_length=20, choices=STAGE_CHOICES, default='NEW')
     tags = models.JSONField(default=list, blank=True)
     notes = models.TextField(null=True, blank=True)
+    bot_paused = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -254,4 +267,32 @@ class Campaign(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.status})"
+
+class SupportMessage(models.Model):
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='support_messages')
+    sender = models.ForeignKey(User, on_delete=models.CASCADE)
+    body = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self):
+        return f"Support Message from {self.sender.username} ({self.client.business_name}) at {self.created_at}"
+
+class AuditLog(models.Model):
+    admin_name = models.CharField(max_length=255)
+    client_name = models.CharField(max_length=255)
+    module = models.CharField(max_length=100)
+    action = models.CharField(max_length=100)
+    before_value = models.TextField(null=True, blank=True)
+    after_value = models.TextField(null=True, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"[{self.created_at}] {self.admin_name} -> {self.client_name}: {self.action} on {self.module}"
 
