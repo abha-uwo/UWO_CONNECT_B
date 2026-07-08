@@ -753,48 +753,7 @@ class WhatsAppWebhookView(APIView):
         except Exception as e:
             print(f"Failed to send message: {str(e)}")
 
-class ClientMessagesView(APIView):
-    permission_classes = [IsAuthenticated]
 
-    def get(self, request):
-        client = get_tenant_client(request)
-        if not client:
-            return Response([])
-        
-        messages = Message.objects.filter(client=client).order_by('-created_at')[:100]
-        data = []
-        for msg in messages:
-            data.append({
-                "id": str(msg.id),
-                "from_address": msg.from_address,
-                "to_address": msg.to_address,
-                "body": msg.body,
-                "channel": msg.channel,
-                "message_type": msg.message_type,
-                "status": msg.status,
-                "created_at": msg.created_at
-            })
-        return Response(data)
-
-    def post(self, request):
-        client = get_tenant_client(request)
-        if not client:
-            return Response({"error": "No client associated"}, status=400)
-            
-        to_number = request.data.get('to_number')
-        body = request.data.get('body')
-        
-        if not to_number or not body:
-            return Response({"error": "to_number and body are required"}, status=400)
-            
-        phone_number_id = client.whatsapp_phone_number_id
-        if not phone_number_id:
-            return Response({"error": "WhatsApp not connected"}, status=400)
-            
-        webhook_view = WhatsAppWebhookView()
-        webhook_view.send_whatsapp_message(client, to_number, body, phone_number_id)
-        
-        return Response({"status": "sent"})
 
 class PlatformAssistantView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1479,6 +1438,66 @@ class FacebookInstagramWebhookView(APIView):
             )
         except Exception as e:
             print(f"Failed to send {platform} message:", str(e))
+
+
+class ClientMessagesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        client = get_tenant_client(request)
+        if not client:
+            return Response([])
+        
+        messages = Message.objects.filter(client=client).order_by('-created_at')[:100]
+        data = []
+        for msg in messages:
+            data.append({
+                "id": str(msg.id),
+                "from_address": msg.from_address,
+                "to_address": msg.to_address,
+                "body": msg.body,
+                "channel": msg.channel,
+                "message_type": msg.message_type,
+                "status": msg.status,
+                "created_at": msg.created_at
+            })
+        return Response(data)
+
+    def post(self, request):
+        client = get_tenant_client(request)
+        if not client:
+            return Response({"error": "No client associated"}, status=400)
+            
+        to_number = request.data.get('to_number')
+        body = request.data.get('body')
+        channel = request.data.get('channel')
+        
+        if not to_number or not body:
+            return Response({"error": "to_number and body are required"}, status=400)
+            
+        # Detect channel if not provided
+        if not channel:
+            last_msg = Message.objects.filter(client=client, from_address=to_number).order_by('-created_at').first()
+            if not last_msg:
+                last_msg = Message.objects.filter(client=client, to_address=to_number).order_by('-created_at').first()
+            channel = last_msg.channel if last_msg else 'WHATSAPP'
+            
+        channel = channel.upper()
+        
+        if channel == 'WHATSAPP':
+            phone_number_id = client.whatsapp_phone_number_id
+            if not phone_number_id:
+                return Response({"error": "WhatsApp not connected for this client"}, status=400)
+                
+            webhook_view = WhatsAppWebhookView()
+            webhook_view.send_whatsapp_message(client, to_number, body, phone_number_id)
+        elif channel in ['INSTAGRAM', 'FACEBOOK']:
+            webhook_view = FacebookInstagramWebhookView()
+            webhook_view.send_message(client, channel, to_number, body)
+        else:
+            return Response({"error": f"Unsupported channel: {channel}"}, status=400)
+            
+        return Response({"status": "sent"})
 
 def log_admin_action(request, instance, module, action, before_value=None, after_value=None):
     auth_data = getattr(request, 'auth', None)
