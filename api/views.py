@@ -412,7 +412,49 @@ class ProfileView(APIView):
         # Update Client fields
         serializer = ClientSerializer(request.user.client, data=request.data, partial=True)
         if serializer.is_valid():
-            serializer.save()
+            client_instance = serializer.save()
+            
+            # --- Programmatic Webhook Auto-Subscription to Meta App ---
+            import requests
+            
+            # 1. Handle Facebook Page Subscription
+            facebook_config = request.data.get('facebook_config')
+            if facebook_config and isinstance(facebook_config, dict):
+                page_id = facebook_config.get('page_id')
+                access_token = facebook_config.get('access_token')
+                if page_id and access_token:
+                    try:
+                        sub_url = f"https://graph.facebook.com/v20.0/{page_id}/subscribed_apps"
+                        sub_payload = {
+                            "subscribed_fields": "messages,messaging_postbacks,messaging_optins,message_deliveries",
+                            "access_token": access_token
+                        }
+                        res = requests.post(sub_url, data=sub_payload, timeout=10)
+                        print(f"\n[Meta API] Facebook Page {page_id} Webhook Subscription Response: {res.status_code} {res.text}\n")
+                    except Exception as e:
+                        print(f"Error subscribing Facebook page {page_id}: {str(e)}")
+            
+            # 2. Handle Instagram Page Subscription
+            instagram_config = request.data.get('instagram_config')
+            if instagram_config and isinstance(instagram_config, dict):
+                access_token = instagram_config.get('access_token')
+                if access_token:
+                    try:
+                        # Find Page ID associated with the Instagram access token / Page Access Token
+                        me_res = requests.get(f"https://graph.facebook.com/v20.0/me?fields=id,name&access_token={access_token}", timeout=10)
+                        if me_res.status_code == 200:
+                            page_id = me_res.json().get('id')
+                            if page_id:
+                                sub_url = f"https://graph.facebook.com/v20.0/{page_id}/subscribed_apps"
+                                sub_payload = {
+                                    "subscribed_fields": "messages,messaging_postbacks,messaging_optins,message_deliveries",
+                                    "access_token": access_token
+                                }
+                                res = requests.post(sub_url, data=sub_payload, timeout=10)
+                                print(f"\n[Meta API] Instagram linked Facebook Page {page_id} Webhook Subscription Response: {res.status_code} {res.text}\n")
+                    except Exception as e:
+                        print(f"Error subscribing Instagram linked page: {str(e)}")
+                        
             return Response(serializer.data)
         return Response(serializer.errors, status=400)
 
@@ -1365,12 +1407,18 @@ class FacebookInstagramWebhookView(APIView):
                 messaging = entry.get('messaging', [])
                 for event in messaging:
                     sender_id = event.get('sender', {}).get('id')
-                    message = event.get('message', {})
+                    body = ""
+                    if 'message' in event:
+                        msg_data = event.get('message', {})
+                        if 'quick_reply' in msg_data:
+                            body = msg_data.get('quick_reply', {}).get('payload', '')
+                        else:
+                            body = msg_data.get('text', '')
+                    elif 'postback' in event:
+                        body = event.get('postback', {}).get('payload', '') or event.get('postback', {}).get('title', '')
                     
-                    if not message or 'text' not in message:
+                    if not body:
                         continue
-                        
-                    body = message.get('text', '')
                     
                     # Ensure Contact exists for CRM
                     contact, _ = Contact.objects.get_or_create(
