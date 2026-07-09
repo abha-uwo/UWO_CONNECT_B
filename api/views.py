@@ -1242,7 +1242,10 @@ class ForgotPasswordSendOTPView(views.APIView):
                 html_message=html_body
             )
             print(f"\n[OTP] Sent {otp} to {email} via SMTP\n")
-            return Response({"message": "OTP sent to your email successfully"})
+            msg = "OTP sent to your email successfully"
+            if settings.DEBUG:
+                msg += f" (Debug Code: {otp})"
+            return Response({"message": msg})
         except Exception as e:
             print(f"Email SMTP send error: {str(e)}")
             return Response({"message": f"Failed to send email: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
