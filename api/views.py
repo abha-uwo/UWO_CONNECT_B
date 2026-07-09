@@ -1237,7 +1237,7 @@ class ForgotPasswordSendOTPView(views.APIView):
             send_mail(
                 subject="Your Password Reset OTP - Meta Connect",
                 message=f"Your OTP for resetting your Meta Connect password is: {otp}.\nThis OTP is valid for 15 minutes.",
-                from_email=settings.DEFAULT_FROM_EMAIL,
+                from_email=f"Meta Connect <{settings.EMAIL_HOST_USER}>" if settings.EMAIL_HOST_USER else settings.DEFAULT_FROM_EMAIL,
                 recipient_list=[email],
                 html_message=html_body
             )
