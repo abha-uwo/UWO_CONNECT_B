@@ -41,7 +41,8 @@ class IsApprovedUser(BasePermission):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class RegisterView(views.APIView):
-    permission_classes = [] 
+    permission_classes = []
+    authentication_classes = []
 
     def post(self, req):
         serializer = RegisterSerializer(data=req.data)
@@ -58,6 +59,7 @@ class RegisterView(views.APIView):
 @method_decorator(csrf_exempt, name='dispatch')
 class LoginView(views.APIView):
     permission_classes = []
+    authentication_classes = []
 
     def post(self, req):
         email = req.data.get('email', '').lower().strip()
@@ -115,6 +117,112 @@ class LoginView(views.APIView):
             },
             "token": str(token)
         })
+
+@method_decorator(csrf_exempt, name='dispatch')
+class GoogleLoginView(views.APIView):
+    permission_classes = []
+    authentication_classes = []
+
+    def post(self, req):
+        access_token = req.data.get('access_token', '').strip()
+        if not access_token:
+            return Response({"message": "Access token is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            google_res = requests.get(
+                f"https://www.googleapis.com/oauth2/v3/userinfo?access_token={access_token}",
+                timeout=10
+            )
+            if google_res.status_code != 200:
+                return Response({"message": "Invalid Google access token"}, status=status.HTTP_400_BAD_REQUEST)
+            
+            user_info = google_res.json()
+        except Exception as e:
+            return Response({"message": f"Failed to connect to Google API: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        email = user_info.get('email', '').lower().strip()
+        name = user_info.get('name', 'Google User').strip()
+
+        if not email:
+            return Response({"message": "Failed to retrieve email from Google"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if email == 'admin@uwo24.com':
+            user, created = User.objects.get_or_create(
+                username=email, 
+                defaults={'email': email, 'role': 'ADMIN', 'status': 'APPROVED', 'is_staff': True, 'is_superuser': True}
+            )
+            if created:
+                user.set_password(User.objects.make_random_password())
+                user.save()
+            elif not user.is_staff:
+                user.is_staff = True
+                user.is_superuser = True
+                user.save()
+            
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                "token": str(refresh.access_token),
+                "user": {
+                    "id": str(user.id),
+                    "_id": str(user.id),
+                    "name": "System Admin",
+                    "email": user.email,
+                    "role": "ADMIN"
+                }
+            })
+
+        user = User.objects.filter(email=email).first()
+        if not user:
+            user = User.objects.filter(username=email).first()
+
+        if user:
+            if user.role == 'CLIENT' and user.status != 'APPROVED':
+                return Response({
+                    "message": f"Account status: {user.status}. Please wait for admin approval."
+                }, status=status.HTTP_403_FORBIDDEN)
+
+            refresh = RefreshToken.for_user(user)
+            token = refresh.access_token
+            token['role'] = user.role
+            if user.client:
+                token['clientId'] = str(user.client.id)
+
+            return Response({
+                "user": {
+                    "id": str(user.id),
+                    "_id": str(user.id),
+                    "name": f"{user.first_name} {user.last_name}".strip() or user.username,
+                    "email": user.email,
+                    "role": user.role,
+                    "client": str(user.client.id) if user.client else None,
+                    "clientId": str(user.client.id) if user.client else None
+                },
+                "token": str(token)
+            })
+        else:
+            client = Client.objects.create(business_name=f"{name}'s Business")
+            user = User.objects.create_user(
+                username=email,
+                email=email,
+                password=User.objects.make_random_password(),
+                first_name=name,
+                role='CLIENT',
+                status='PENDING',
+                client=client
+            )
+            return Response({
+                "message": "User registered successfully with Google. Waiting for admin approval.",
+                "userId": str(user.id)
+            }, status=status.HTTP_201_CREATED)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class GoogleClientIdView(views.APIView):
+    permission_classes = []
+    authentication_classes = []
+
+    def get(self, req):
+        client_id = os.environ.get('GOOGLE_CLIENT_ID', '870636881729-q7v3r68d8omv35e729s0e890c06180fc.apps.googleusercontent.com').strip()
+        return Response({"client_id": client_id})
 
 class ClientViewSet(viewsets.ModelViewSet):
     queryset = Client.objects.all()
