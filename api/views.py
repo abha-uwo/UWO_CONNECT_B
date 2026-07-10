@@ -659,7 +659,7 @@ class WhatsAppWebhookView(APIView):
         challenge = request.query_params.get('hub.challenge')
 
         # Use the verify token from .env (or settings)
-        verify_token = os.getenv('WHATSAPP_VERIFY_TOKEN')
+        verify_token = os.getenv('WHATSAPP_VERIFY_TOKEN', 'aisaconnect_secure_token')
 
         if mode and token:
             if mode == 'subscribe' and token == verify_token:
@@ -782,6 +782,11 @@ class WhatsAppWebhookView(APIView):
         match_found = False
         # 1. Try Keyword Matching
         for auto in automations:
+            # Check channels list
+            auto_channels = auto.channels or []
+            if len(auto_channels) > 0 and 'WHATSAPP' not in auto_channels:
+                continue
+
             if auto.keywords:
                 for keyword in auto.keywords:
                     if keyword.lower().strip() == incoming_text_lower:
