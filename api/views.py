@@ -679,10 +679,12 @@ class WhatsAppWebhookView(APIView):
         try:
             # Check if it's a message event
             if data.get('object') == 'whatsapp_business_account':
-                for entry in data.get('entry', []):
-                    for change in entry.get('changes', []):
-                        value = change.get('value', {})
-                        metadata = value.get('metadata', {})
+                for entry in data.get('entry') or []:
+                    entry = entry or {}
+                    for change in entry.get('changes') or []:
+                        change = change or {}
+                        value = change.get('value') or {}
+                        metadata = value.get('metadata') or {}
                         phone_number_id = metadata.get('phone_number_id')
                         
                         # Find the client associated with this phone number ID
@@ -695,27 +697,27 @@ class WhatsAppWebhookView(APIView):
                             print(f"Automation disabled for client: {client.business_name}")
                             continue
 
-                        contacts = value.get('contacts', [])
+                        contacts = value.get('contacts') or []
                         contact_name = "Unknown"
                         if contacts:
-                            contact_name = contacts[0].get('profile', {}).get('name', 'Unknown')
+                            contact_name = (contacts[0].get('profile') or {}).get('name', 'Unknown')
 
-                        messages = value.get('messages', [])
+                        messages = value.get('messages') or []
                         for msg in messages:
                             from_number = msg.get('from')
                             msg_type = msg.get('type')
                             body = ""
 
                             if msg_type == 'text':
-                                body = msg.get('text', {}).get('body', '')
+                                body = (msg.get('text') or {}).get('body', '')
                             elif msg_type == 'button':
-                                body = msg.get('button', {}).get('text', '')
+                                body = (msg.get('button') or {}).get('text', '')
                             elif msg_type == 'interactive':
-                                i_type = msg.get('interactive', {}).get('type')
+                                i_type = (msg.get('interactive') or {}).get('type')
                                 if i_type == 'button_reply':
-                                    body = msg.get('interactive', {}).get('button_reply', {}).get('title', '')
+                                    body = (msg.get('interactive') or {}).get('button_reply', {}).get('title', '')
                                 elif i_type == 'list_reply':
-                                    body = msg.get('interactive', {}).get('list_reply', {}).get('title', '')
+                                    body = (msg.get('interactive') or {}).get('list_reply', {}).get('title', '')
                             
                             
                             # Ensure Contact exists for CRM
@@ -1388,9 +1390,11 @@ class FacebookInstagramWebhookView(APIView):
 
         try:
             # Facebook/Instagram webhook structure has 'entry'
-            for entry in data.get('entry', []):
+            for entry in data.get('entry') or []:
+                entry = entry or {}
                 recipient_id = entry.get('id') # Page ID or Instagram Business Account ID
                 
+
                 client = None
                 platform = None
                 
