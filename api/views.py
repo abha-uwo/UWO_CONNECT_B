@@ -92,7 +92,7 @@ class LoginView(views.APIView):
 
         user = authenticate(username=email, password=password)
         if not user:
-            return Response({"message": "Invalid credentials"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"message": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 
         if user.role == 'CLIENT' and user.status != 'APPROVED':
             return Response({
