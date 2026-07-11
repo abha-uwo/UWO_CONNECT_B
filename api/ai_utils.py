@@ -170,7 +170,30 @@ def get_platform_assistance(user_query):
     3. Visual Workflow Builder: Create complex multi-step automations.
     4. Team Inbox: Real-time chat dashboard for multiple agents.
     5. Broadcast Manager: Send bulk marketing messages.
-    6. CRM Integration: Manage client leads and data.
-    Clients use it to automate their business communication on WhatsApp.
+    clients use it to automate their business communication on WhatsApp.
     """
     return get_ai_response(user_query, platform_context)
+
+
+def get_ai_draft(chat_history):
+    """
+    Generates a suggested reply based on the chat history.
+    chat_history: list of dicts [{'role': 'user'/'assistant', 'content': 'message'}]
+    """
+    try:
+        system_prompt = "You are a professional customer support agent. Generate a concise, friendly, and helpful draft reply to the user's last message, taking into account the context of the conversation. Output ONLY the draft message."
+        
+        # Prepare messages
+        messages = [{"role": "system", "content": system_prompt}]
+        messages.extend(chat_history)
+        
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            max_tokens=300,
+            temperature=0.7
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        print(f"AI Draft Error: {str(e)}")
+        return "I'm sorry, I couldn't generate a draft right now."

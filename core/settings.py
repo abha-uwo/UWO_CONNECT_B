@@ -31,6 +31,7 @@ ALLOWED_HOSTS = ['*']
 
 # Application definition
 INSTALLED_APPS = [
+    'daphne',
     'mongo_migrations.apps.MongoAuthConfig',
     'mongo_migrations.apps.MongoContentTypesConfig',
     'mongo_migrations.apps.MongoSessionsConfig',
@@ -41,6 +42,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'rest_framework_simplejwt',
+    'channels',
 
     # Local
     'api',
@@ -123,7 +125,13 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = 'core.wsgi.application'
+ASGI_APPLICATION = 'core.asgi.application'
+
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    },
+}
 
 # Database — MongoDB Atlas via django-mongodb-backend
 DATABASES = {

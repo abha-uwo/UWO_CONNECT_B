@@ -8,8 +8,8 @@ from rest_framework.views import APIView
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
-from .serializers import RegisterSerializer, UserSerializer, ClientSerializer, AutomationSerializer, WorkflowSerializer, ContactSerializer, TemplateSerializer, CampaignSerializer, SupportMessageSerializer, AuditLogSerializer
-from .models import User, Client, Automation, Message, Workflow, KnowledgeDocument, KnowledgeChunk, Contact, Template, Campaign, SupportMessage, AuditLog
+from .serializers import RegisterSerializer, UserSerializer, ClientSerializer, AutomationSerializer, WorkflowSerializer, ContactSerializer, TemplateSerializer, CampaignSerializer, SupportMessageSerializer, AuditLogSerializer, TeamInviteSerializer
+from .models import User, Client, Automation, Message, Workflow, KnowledgeDocument, KnowledgeChunk, Contact, Template, Campaign, SupportMessage, AuditLog, TeamInvite
 import requests
 import os
 import json
@@ -200,20 +200,66 @@ class GoogleLoginView(views.APIView):
                 "token": str(token)
             })
         else:
-            client = Client.objects.create(business_name=f"{name}'s Business")
-            user = User.objects.create_user(
-                username=email,
-                email=email,
-                password=User.objects.make_random_password(),
-                first_name=name,
-                role='CLIENT',
-                status='PENDING',
-                client=client
-            )
-            return Response({
-                "message": "User registered successfully with Google. Waiting for admin approval.",
-                "userId": str(user.id)
-            }, status=status.HTTP_201_CREATED)
+            invite_token = req.data.get('invite_token', '').strip()
+            
+            if invite_token:
+                from django.utils import timezone
+                from .models import TeamInvite
+                invite = TeamInvite.objects.filter(
+                    token=invite_token, 
+                    is_used=False, 
+                    expires_at__gt=timezone.now()
+                ).first()
+                
+                if not invite:
+                    return Response({"message": "Invalid or expired invite token."}, status=status.HTTP_400_BAD_REQUEST)
+                    
+                user = User.objects.create_user(
+                    username=email,
+                    email=email,
+                    password=User.objects.make_random_password(),
+                    first_name=name,
+                    role='AGENT',
+                    status='APPROVED',
+                    client=invite.client,
+                    permissions=invite.permissions
+                )
+                
+                invite.is_used = True
+                invite.save()
+                
+                refresh = RefreshToken.for_user(user)
+                token = refresh.access_token
+                token['role'] = user.role
+                token['clientId'] = str(user.client.id)
+                
+                return Response({
+                    "user": {
+                        "id": str(user.id),
+                        "_id": str(user.id),
+                        "name": f"{user.first_name} {user.last_name}".strip() or user.username,
+                        "email": user.email,
+                        "role": user.role,
+                        "client": str(user.client.id),
+                        "clientId": str(user.client.id)
+                    },
+                    "token": str(token)
+                }, status=status.HTTP_201_CREATED)
+            else:
+                client = Client.objects.create(business_name=f"{name}'s Business")
+                user = User.objects.create_user(
+                    username=email,
+                    email=email,
+                    password=User.objects.make_random_password(),
+                    first_name=name,
+                    role='CLIENT',
+                    status='PENDING',
+                    client=client
+                )
+                return Response({
+                    "message": "User registered successfully with Google. Waiting for admin approval.",
+                    "userId": str(user.id)
+                }, status=status.HTTP_201_CREATED)
 
 @method_decorator(csrf_exempt, name='dispatch')
 class GoogleClientIdView(views.APIView):
@@ -381,6 +427,81 @@ class ContactViewSet(viewsets.ModelViewSet):
         before_data = str(self.get_serializer(instance).data)
         log_admin_action(self.request, instance, 'Contacts', 'DELETE', before_value=before_data)
         instance.delete()
+
+    @action(detail=False, methods=['post'])
+    def import_csv(self, request):
+        client = get_tenant_client(request)
+        if not client:
+            return Response({"message": "No client associated"}, status=400)
+            
+        file = request.FILES.get('file')
+        if not file or not file.name.endswith('.csv'):
+            return Response({"message": "Please upload a valid CSV file."}, status=400)
+            
+        try:
+            import csv
+            import io
+            decoded_file = file.read().decode('utf-8')
+            io_string = io.StringIO(decoded_file)
+            reader = csv.DictReader(io_string)
+            
+            imported_count = 0
+            for row in reader:
+                platform_id = row.get('PlatformID') or row.get('Phone') or row.get('Phone Number')
+                if not platform_id:
+                    continue
+                    
+                phone = row.get('Phone') or row.get('Phone Number') or platform_id
+                name = row.get('Name') or 'Unknown'
+                stage = row.get('Stage') or 'NEW'
+                tags_str = row.get('Tags', '')
+                tags = [t.strip() for t in tags_str.split(',')] if tags_str else []
+                
+                Contact.objects.update_or_create(
+                    client=client,
+                    platform_id=platform_id,
+                    defaults={
+                        'name': name,
+                        'phone_number': phone,
+                        'stage': stage if stage in [c[0] for c in Contact.STAGE_CHOICES] else 'NEW',
+                        'tags': tags
+                    }
+                )
+                imported_count += 1
+                
+            return Response({"message": f"Successfully imported {imported_count} contacts."})
+        except Exception as e:
+            return Response({"message": f"Error parsing CSV: {str(e)}"}, status=400)
+
+    @action(detail=False, methods=['get'])
+    def export_csv(self, request):
+        from django.http import HttpResponse
+        import csv
+        
+        client = get_tenant_client(request)
+        if not client:
+            return Response({"message": "No client associated"}, status=400)
+            
+        contacts = Contact.objects.filter(client=client)
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="contacts.csv"'
+        
+        writer = csv.writer(response)
+        writer.writerow(['PlatformID', 'Name', 'Phone', 'Email', 'Stage', 'Tags', 'Notes', 'Created At'])
+        
+        for contact in contacts:
+            writer.writerow([
+                contact.platform_id,
+                contact.name or '',
+                contact.phone_number or '',
+                contact.email or '',
+                contact.stage,
+                ','.join(contact.tags),
+                contact.notes or '',
+                contact.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            ])
+            
+        return response
 
 class ProfileView(APIView):
     permission_classes = [IsAuthenticated]
@@ -1608,6 +1729,50 @@ class FacebookInstagramWebhookView(APIView):
             print(f"Failed to send {platform} message:", str(e))
 
 
+from .ai_utils import get_ai_draft
+
+class SuggestDraftView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        client = get_tenant_client(request)
+        if not client:
+            return Response({"error": "No client associated"}, status=400)
+            
+        contact_id = request.data.get('contact_id')
+        if not contact_id:
+            return Response({"error": "contact_id is required"}, status=400)
+            
+        # Get last 10 messages for context
+        try:
+            contact = Contact.objects.get(id=contact_id, client=client)
+        except Contact.DoesNotExist:
+            return Response({"error": "Contact not found"}, status=404)
+            
+        messages = Message.objects.filter(
+            client=client, 
+            from_address=contact.platform_id
+        ) | Message.objects.filter(
+            client=client, 
+            to_address=contact.platform_id
+        )
+        
+        messages = messages.order_by('-created_at')[:10]
+        messages = reversed(messages) # chronological order
+        
+        chat_history = []
+        for msg in messages:
+            # Internal notes aren't strictly part of the external convo, but could be helpful context.
+            # Let's include them for AI context.
+            role = "user" if msg.message_type == "INCOMING" else "assistant"
+            chat_history.append({"role": role, "content": msg.body})
+            
+        if not chat_history:
+            return Response({"draft": "Hi there! How can I help you today?"})
+            
+        draft = get_ai_draft(chat_history)
+        return Response({"draft": draft})
+
 class ClientMessagesView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -1642,6 +1807,20 @@ class ClientMessagesView(APIView):
         
         if not to_number or not body:
             return Response({"error": "to_number and body are required"}, status=400)
+            
+        message_type = request.data.get('message_type', 'OUTGOING')
+        
+        if message_type == 'INTERNAL':
+            Message.objects.create(
+                client=client,
+                channel=channel or 'WHATSAPP',
+                from_address=client.business_name,
+                to_address=to_number,
+                body=body,
+                message_type='INTERNAL',
+                status='SENT'
+            )
+            return Response({"status": "internal_note_saved"})
             
         # Detect channel if not provided
         if not channel:
@@ -1831,3 +2010,110 @@ class AuditLogViewSet(viewsets.ReadOnlyModelViewSet):
             queryset = queryset.filter(module=module)
             
         return queryset
+
+class TeamMemberViewSet(viewsets.ModelViewSet):
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if getattr(user, 'client', None):
+            return User.objects.filter(client=user.client)
+        return User.objects.none()
+
+    def perform_destroy(self, instance):
+        if instance == self.request.user:
+            raise serializers.ValidationError("Cannot remove yourself from the team.")
+        instance.delete()
+
+
+class TeamInviteView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not getattr(request.user, 'client', None):
+            return Response([], status=status.HTTP_200_OK)
+        invites = TeamInvite.objects.filter(client=request.user.client)
+        serializer = TeamInviteSerializer(invites, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        if not getattr(request.user, 'client', None):
+            return Response({"error": "No client associated"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        email = request.data.get('email')
+        if not email:
+            return Response({"error": "Email is required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        import secrets
+        from django.utils import timezone
+        import datetime
+        token = secrets.token_urlsafe(32)
+        invite = TeamInvite.objects.create(
+            client=request.user.client,
+            email=email,
+            token=token,
+            expires_at=timezone.now() + datetime.timedelta(days=7)
+        )
+        serializer = TeamInviteSerializer(invite)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def delete(self, request):
+        if not getattr(request.user, 'client', None):
+            return Response({"error": "No client associated"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        invite_id = request.query_params.get('id')
+        if not invite_id:
+            return Response({"error": "ID is required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            invite = TeamInvite.objects.get(id=invite_id, client=request.user.client)
+            invite.delete()
+            return Response(status=status.HTTP_204_NO_CONTENT)
+        except TeamInvite.DoesNotExist:
+            return Response({"error": "Invite not found"}, status=status.HTTP_404_NOT_FOUND)
+
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
+from .models import TeamMessage
+from .serializers import TeamMessageSerializer
+
+class TeamChatView(views.APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if not getattr(request.user, 'client', None):
+            return Response({"error": "No client associated"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        messages = TeamMessage.objects.filter(client=request.user.client).order_by('-created_at')[:50]
+        # Return in chronological order
+        serializer = TeamMessageSerializer(reversed(messages), many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        if not getattr(request.user, 'client', None):
+            return Response({"error": "No client associated"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        body = request.data.get('body')
+        if not body:
+            return Response({"error": "Body is required"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        msg = TeamMessage.objects.create(
+            client=request.user.client,
+            sender=request.user,
+            body=body
+        )
+        
+        serializer = TeamMessageSerializer(msg)
+        
+        # Broadcast via WebSockets
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f'teamchat_{request.user.client.id}',
+            {
+                'type': 'new_team_message',
+                'message': serializer.data
+            }
+        )
+        
+        return Response(serializer.data, status=status.HTTP_201_CREATED)

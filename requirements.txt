@@ -39,3 +39,6 @@ azure-storage-blob
 gunicorn==23.0.0
 google-cloud-storage==2.14.0
 resend
+openai
+PyPDF2
+numpy

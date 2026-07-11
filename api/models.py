@@ -42,6 +42,12 @@ class Client(models.Model):
     instagram_config = models.JSONField(default=dict, blank=True)
     settings = models.JSONField(default=dict, blank=True)
     
+    # Enterprise Features
+    api_key = models.CharField(max_length=100, null=True, blank=True, unique=True)
+    white_label_name = models.CharField(max_length=100, null=True, blank=True)
+    white_label_domain = models.CharField(max_length=100, null=True, blank=True)
+    white_label_logo = models.CharField(max_length=255, null=True, blank=True)
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -52,6 +58,7 @@ class User(AbstractUser):
     ROLE_CHOICES = [
         ('ADMIN', 'Admin'),
         ('CLIENT', 'Client'),
+        ('AGENT', 'Agent'),
     ]
     STATUS_CHOICES = [
         ('PENDING', 'Pending'),
@@ -62,9 +69,22 @@ class User(AbstractUser):
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='CLIENT')
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PENDING')
     client = models.ForeignKey(Client, on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
+    permissions = models.JSONField(default=list, blank=True)
 
     def __str__(self):
         return f"{self.username} ({self.role})"
+
+class TeamInvite(models.Model):
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='team_invites')
+    email = models.EmailField()
+    token = models.CharField(max_length=64, unique=True)
+    permissions = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    is_used = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Invite for {self.email} to {self.client.business_name}"
 
 class PasswordResetOTP(models.Model):
     email = models.EmailField()
@@ -129,6 +149,7 @@ class Message(models.Model):
     TYPE_CHOICES = [
         ('INCOMING', 'Incoming'),
         ('OUTGOING', 'Outgoing'),
+        ('INTERNAL', 'Internal Note'),
     ]
     STATUS_CHOICES = [
         ('PENDING', 'Pending'),
@@ -223,6 +244,8 @@ class Contact(models.Model):
     tags = models.JSONField(default=list, blank=True)
     notes = models.TextField(null=True, blank=True)
     bot_paused = models.BooleanField(default=False)
+    is_archived = models.BooleanField(default=False)
+    snoozed_until = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -279,6 +302,19 @@ class SupportMessage(models.Model):
 
     def __str__(self):
         return f"Support Message from {self.sender.username} ({self.client.business_name}) at {self.created_at}"
+
+class TeamMessage(models.Model):
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='team_messages')
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_team_messages')
+    body = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+        
+    def __str__(self):
+        return f"From {self.sender.username}: {self.body[:20]}"
+
 
 class AuditLog(models.Model):
     admin_name = models.CharField(max_length=255)

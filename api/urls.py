@@ -6,7 +6,8 @@ from .views import (
     WhatsAppWebhookView, FacebookInstagramWebhookView, AdminUsersView, ProfileView, ClientMessagesView, 
     GlobalSettingsView, PlatformAssistantView, KnowledgeBaseView, TemplateViewSet, 
     CampaignViewSet, ForgotPasswordSendOTPView, ForgotPasswordVerifyOTPView, ForgotPasswordResetView,
-    SupportMessageViewSet, AdminImpersonateView, AuditLogViewSet
+    SupportMessageViewSet, AdminImpersonateView, AuditLogViewSet,
+    SuggestDraftView, TeamMemberViewSet, TeamInviteView, TeamChatView
 )
 
 router = DefaultRouter()
@@ -18,9 +19,12 @@ router.register(r'templates', TemplateViewSet, basename='template')
 router.register(r'campaigns', CampaignViewSet, basename='campaign')
 router.register(r'support/messages', SupportMessageViewSet, basename='support-message')
 router.register(r'audit-logs', AuditLogViewSet, basename='audit-log')
+router.register(r'team/members', TeamMemberViewSet, basename='team-member')
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('team/invites/', TeamInviteView.as_view(), name='team-invites'),
+    path('team/chat/', TeamChatView.as_view(), name='team-chat'),
     path('auth/register', RegisterView.as_view(), name='register'),
     path('auth/login', LoginView.as_view(), name='login'),
     path('auth/google-login', GoogleLoginView.as_view(), name='google-login'),
@@ -30,6 +34,7 @@ urlpatterns = [
     path('auth/forgot-password/reset', ForgotPasswordResetView.as_view(), name='forgot-password-reset'),
     path('profile', ProfileView.as_view(), name='profile'),
     path('messages/', ClientMessagesView.as_view(), name='client-messages'),
+    path('messages/suggest_draft/', SuggestDraftView.as_view(), name='suggest-draft'),
     path('client/stats', ClientStatsView.as_view(), name='client-stats'),
     path('admin/stats', AdminStatsView.as_view(), name='admin-stats'),
     path('admin/automations', AdminAutomationsView.as_view(), name='admin-automations'),

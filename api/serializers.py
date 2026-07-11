@@ -1,6 +1,5 @@
 from rest_framework import serializers
-from .models import User, Client, Automation, Workflow, GlobalSetting, Contact, Template, Campaign, SupportMessage, AuditLog
-
+from .models import User, Client, Automation, Workflow, GlobalSetting, Contact, Template, Campaign, SupportMessage, AuditLog, TeamInvite, KnowledgeDocument, TeamMessage
 
 class ObjectIdField(serializers.Field):
     """
@@ -48,8 +47,17 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'name', 'first_name', 'role', 'status', 'client')
+        fields = ('id', 'username', 'email', 'name', 'first_name', 'role', 'status', 'client', 'permissions')
         extra_kwargs = {'password': {'write_only': True}}
+
+class TeamInviteSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    client = ObjectIdField(read_only=True)
+
+    class Meta:
+        model = TeamInvite
+        fields = '__all__'
+        read_only_fields = ('client', 'token', 'created_at', 'is_used')
 
 
 class AutomationSerializer(serializers.ModelSerializer):
@@ -76,7 +84,8 @@ class RegisterSerializer(serializers.Serializer):
     email = serializers.EmailField()
     password = serializers.CharField(write_only=True)
     name = serializers.CharField()
-    businessName = serializers.CharField(required=False)
+    businessName = serializers.CharField(required=False, allow_blank=True)
+    invite_token = serializers.CharField(required=False, allow_blank=True)
 
     def validate_email(self, value):
         email = value.lower().strip()
@@ -87,19 +96,46 @@ class RegisterSerializer(serializers.Serializer):
     def create(self, validated_data):
         email = validated_data['email'].lower().strip()
         business_name = validated_data.get('businessName', f"{validated_data['name']}'s Business")
+        invite_token = validated_data.get('invite_token')
 
-        client = Client.objects.create(business_name=business_name)
-
-        user = User.objects.create_user(
-            username=email,
-            email=email,
-            password=validated_data['password'],
-            first_name=validated_data['name'],
-            role='CLIENT',
-            status='PENDING',
-            client=client
-        )
-        return user
+        if invite_token:
+            from django.utils import timezone
+            invite = TeamInvite.objects.filter(
+                token=invite_token, 
+                is_used=False, 
+                expires_at__gt=timezone.now()
+            ).first()
+            
+            if not invite:
+                raise serializers.ValidationError({"invite_token": "Invalid or expired invite token."})
+                
+            user = User.objects.create_user(
+                username=email,
+                email=email,
+                password=validated_data['password'],
+                first_name=validated_data['name'],
+                role='AGENT',
+                status='APPROVED',
+                client=invite.client,
+                permissions=invite.permissions
+            )
+            
+            invite.is_used = True
+            invite.save()
+            return user
+        else:
+            client = Client.objects.create(business_name=business_name)
+    
+            user = User.objects.create_user(
+                username=email,
+                email=email,
+                password=validated_data['password'],
+                first_name=validated_data['name'],
+                role='CLIENT',
+                status='PENDING',
+                client=client
+            )
+            return user
 
 
 class GlobalSettingSerializer(serializers.ModelSerializer):
@@ -137,6 +173,15 @@ class CampaignSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ('client', 'created_at', 'updated_at')
 
+class KnowledgeDocumentSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    client = ObjectIdField(read_only=True)
+    
+    class Meta:
+        model = KnowledgeDocument
+        fields = '__all__'
+        read_only_fields = ('client', 'uploaded_at', 'status')
+
 class SupportMessageSerializer(serializers.ModelSerializer):
     id = ObjectIdField(read_only=True)
     client = ObjectIdField(read_only=True)
@@ -155,3 +200,15 @@ class AuditLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = AuditLog
         fields = '__all__'
+
+class TeamMessageSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    client = ObjectIdField(read_only=True)
+    sender = ObjectIdField(read_only=True)
+    sender_name = serializers.ReadOnlyField(source='sender.username')
+    sender_role = serializers.ReadOnlyField(source='sender.role')
+
+    class Meta:
+        model = TeamMessage
+        fields = '__all__'
+        read_only_fields = ('sender', 'client', 'created_at')
