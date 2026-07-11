@@ -221,7 +221,7 @@ class GoogleClientIdView(views.APIView):
     authentication_classes = []
 
     def get(self, req):
-        client_id = os.environ.get('GOOGLE_CLIENT_ID', '870636881729-q7v3r68d8omv35e729s0e890c06180fc.apps.googleusercontent.com').strip()
+        client_id = os.environ.get('GOOGLE_CLIENT_ID', '').strip()
         return Response({"client_id": client_id})
 
 class ClientViewSet(viewsets.ModelViewSet):
