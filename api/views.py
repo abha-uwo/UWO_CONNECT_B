@@ -8,8 +8,8 @@ from rest_framework.views import APIView
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
-from .serializers import RegisterSerializer, UserSerializer, ClientSerializer, AutomationSerializer, WorkflowSerializer, ContactSerializer, TemplateSerializer, CampaignSerializer, SupportMessageSerializer, AuditLogSerializer, TeamInviteSerializer
-from .models import User, Client, Automation, Message, Workflow, KnowledgeDocument, KnowledgeChunk, Contact, Template, Campaign, SupportMessage, AuditLog, TeamInvite
+from .serializers import RegisterSerializer, UserSerializer, ClientSerializer, AutomationSerializer, WorkflowSerializer, ContactSerializer, TemplateSerializer, CampaignSerializer, SupportMessageSerializer, AuditLogSerializer, TeamInviteSerializer, ProductSerializer, OrderSerializer
+from .models import User, Client, Automation, Message, Workflow, KnowledgeDocument, KnowledgeChunk, Contact, Template, Campaign, SupportMessage, AuditLog, TeamInvite, Product, Order
 import requests
 import os
 import json
@@ -831,6 +831,24 @@ class WhatsAppWebhookView(APIView):
 
                             if msg_type == 'text':
                                 body = (msg.get('text') or {}).get('body', '')
+                            elif msg_type == 'audio' or msg_type == 'voice':
+                                audio_data = msg.get('audio') or msg.get('voice') or {}
+                                audio_id = audio_data.get('id')
+                                if audio_id and client.whatsapp_access_token:
+                                    try:
+                                        # Get media URL from Meta
+                                        media_url_endpoint = f"https://graph.facebook.com/v18.0/{audio_id}"
+                                        headers = {"Authorization": f"Bearer {client.whatsapp_access_token}"}
+                                        media_res = requests.get(media_url_endpoint, headers=headers, timeout=5).json()
+                                        media_url = media_res.get('url')
+                                        if media_url:
+                                            from .utils.whisper_utils import transcribe_audio_with_whisper
+                                            transcribed_text = transcribe_audio_with_whisper(media_url, client.whatsapp_access_token)
+                                            if transcribed_text:
+                                                body = transcribed_text
+                                                print(f"Transcribed WhatsApp audio successfully: {body}")
+                                    except Exception as ex:
+                                        print(f"Failed parsing incoming voice note: {str(ex)}")
                             elif msg_type == 'button':
                                 body = (msg.get('button') or {}).get('text', '')
                             elif msg_type == 'interactive':
@@ -1831,6 +1849,26 @@ class ClientMessagesView(APIView):
             
         channel = channel.upper()
         
+        # Human agent takeover: Pause bot response for this contact
+        try:
+            from .models import Contact
+            # Standardize format for query lookup
+            formatted_number = to_number.replace('+', '').strip()
+            contact = Contact.objects.filter(
+                client=client, 
+                phone_number__icontains=formatted_number
+            ).first()
+            if not contact:
+                contact = Contact.objects.filter(
+                    client=client, 
+                    platform_id=to_number
+                ).first()
+            if contact and not contact.bot_paused:
+                contact.bot_paused = True
+                contact.save()
+        except Exception as e:
+            print(f"Failed to auto-pause bot for contact: {str(e)}")
+        
         if channel == 'WHATSAPP':
             phone_number_id = client.whatsapp_phone_number_id
             if not phone_number_id:
@@ -2079,7 +2117,7 @@ from .models import TeamMessage
 from .serializers import TeamMessageSerializer
 
 class TeamChatView(views.APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         if not getattr(request.user, 'client', None):
@@ -2117,3 +2155,81 @@ class TeamChatView(views.APIView):
         )
         
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class ProductViewSet(viewsets.ModelViewSet):
+    serializer_class = ProductSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        client = get_tenant_client(self.request)
+        if not client:
+            return Product.objects.none()
+        return Product.objects.filter(client=client)
+
+    def perform_create(self, serializer):
+        client = get_tenant_client(self.request)
+        serializer.save(client=client)
+
+    @action(detail=False, methods=['post'])
+    def import_csv(self, request):
+        client = get_tenant_client(request)
+        if not client:
+            return Response({"message": "No client associated"}, status=400)
+            
+        file = request.FILES.get('file')
+        if not file or not file.name.endswith('.csv'):
+            return Response({"message": "Please upload a valid CSV file."}, status=400)
+            
+        try:
+            import csv
+            import io
+            decoded_file = file.read().decode('utf-8')
+            io_string = io.StringIO(decoded_file)
+            reader = csv.DictReader(io_string)
+            
+            imported_count = 0
+            for row in reader:
+                name = row.get('Name') or row.get('name')
+                price = row.get('Price') or row.get('price')
+                if not name or not price:
+                    continue
+                    
+                category = row.get('Category') or row.get('category') or 'PHYSICAL'
+                category = category.upper().strip()
+                if category not in ['PHYSICAL', 'DIGITAL', 'BOOK', 'SERVICE', 'OTHER']:
+                    category = 'PHYSICAL'
+                    
+                description = row.get('Description') or row.get('description') or ''
+                image_url = row.get('ImageURL') or row.get('image_url') or ''
+                
+                Product.objects.create(
+                    client=client,
+                    name=name,
+                    price=price,
+                    category=category,
+                    description=description,
+                    image_url=image_url,
+                    in_stock=True
+                )
+                imported_count += 1
+                
+            return Response({"message": f"Successfully imported {imported_count} products."})
+        except Exception as e:
+            return Response({"message": f"Error parsing CSV: {str(e)}"}, status=500)
+
+
+class OrderViewSet(viewsets.ModelViewSet):
+    serializer_class = OrderSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        client = get_tenant_client(self.request)
+        if not client:
+            return Order.objects.none()
+        return Order.objects.filter(client=client)
+
+    def perform_create(self, serializer):
+        client = get_tenant_client(self.request)
+        serializer.save(client=client)
+

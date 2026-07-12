@@ -5,14 +5,20 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
 django.setup()
 
 from rest_framework.test import APIRequestFactory, force_authenticate
-from api.views import ProductViewSet
+from api.views import KnowledgeBaseView
 from api.models import User
 
 factory = APIRequestFactory()
-view = ProductViewSet.as_view({'get': 'list'})
+view = KnowledgeBaseView.as_view()
 
-user = User.objects.filter(role='CLIENT').first()
-request = factory.get('/api/products/')
+# Find an AGENT user
+user = User.objects.filter(role='AGENT').first()
+if not user:
+    user = User.objects.first()
+
+print(f"Testing with User: {user.username}, Role: {user.role}")
+
+request = factory.get('/api/knowledge/')
 force_authenticate(request, user=user)
 
 try:

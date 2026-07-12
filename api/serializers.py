@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, Client, Automation, Workflow, GlobalSetting, Contact, Template, Campaign, SupportMessage, AuditLog, TeamInvite, KnowledgeDocument, TeamMessage
+from .models import User, Client, Automation, Workflow, GlobalSetting, Contact, Template, Campaign, SupportMessage, AuditLog, TeamInvite, KnowledgeDocument, TeamMessage, Product, Order
 
 class ObjectIdField(serializers.Field):
     """
@@ -212,3 +212,26 @@ class TeamMessageSerializer(serializers.ModelSerializer):
         model = TeamMessage
         fields = '__all__'
         read_only_fields = ('sender', 'client', 'created_at')
+
+
+class ProductSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    client = ObjectIdField(read_only=True)
+
+    class Meta:
+        model = Product
+        fields = '__all__'
+        read_only_fields = ('client',)
+
+
+class OrderSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    client = ObjectIdField(read_only=True)
+    contact_name = serializers.ReadOnlyField(source='contact.name')
+    contact_phone = serializers.ReadOnlyField(source='contact.phone_number')
+
+    class Meta:
+        model = Order
+        fields = '__all__'
+        read_only_fields = ('client',)
+

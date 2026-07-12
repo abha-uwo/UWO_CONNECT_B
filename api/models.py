@@ -252,6 +252,16 @@ class Contact(models.Model):
     class Meta:
         unique_together = ('client', 'platform_id')
 
+    def save(self, *args, **kwargs):
+        is_new = self._state.adding
+        super().save(*args, **kwargs)
+        if is_new:
+            try:
+                from .utils.sheets_utils import sync_lead_to_google_sheet
+                sync_lead_to_google_sheet(self.client, self)
+            except Exception as e:
+                print(f"[Sheets Async Trigger Error] {str(e)}")
+
     def __str__(self):
         return f"{self.name or self.platform_id} ({self.client.business_name})"
 
@@ -331,4 +341,45 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"[{self.created_at}] {self.admin_name} -> {self.client_name}: {self.action} on {self.module}"
+
+
+class Product(models.Model):
+    CATEGORY_CHOICES = [
+        ('PHYSICAL', 'Physical Product'),
+        ('DIGITAL', 'Digital Product'),
+        ('BOOK', 'Book / E-Book'),
+        ('SERVICE', 'Service'),
+        ('OTHER', 'Other'),
+    ]
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='products')
+    name = models.CharField(max_length=255)
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    category = models.CharField(max_length=50, choices=CATEGORY_CHOICES, default='PHYSICAL')
+    description = models.TextField(null=True, blank=True)
+    image_url = models.CharField(max_length=500, null=True, blank=True)
+    in_stock = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.name} - ${self.price}"
+
+
+class Order(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('PAID', 'Paid'),
+        ('FAILED', 'Failed'),
+    ]
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='orders')
+    contact = models.ForeignKey(Contact, on_delete=models.CASCADE, related_name='orders')
+    items = models.JSONField(default=list)  # Jisme array of dicts ho: [{'product_id': '...', 'name': '...', 'price': 100, 'quantity': 1}]
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    payment_status = models.CharField(choices=STATUS_CHOICES, default='PENDING', max_length=20)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Order #{self.id} for {self.contact.name or self.contact.phone_number}"
+
 

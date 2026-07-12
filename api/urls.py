@@ -7,7 +7,7 @@ from .views import (
     GlobalSettingsView, PlatformAssistantView, KnowledgeBaseView, TemplateViewSet, 
     CampaignViewSet, ForgotPasswordSendOTPView, ForgotPasswordVerifyOTPView, ForgotPasswordResetView,
     SupportMessageViewSet, AdminImpersonateView, AuditLogViewSet,
-    SuggestDraftView, TeamMemberViewSet, TeamInviteView, TeamChatView
+    SuggestDraftView, TeamMemberViewSet, TeamInviteView, TeamChatView, ProductViewSet, OrderViewSet
 )
 
 router = DefaultRouter()
@@ -20,6 +20,8 @@ router.register(r'campaigns', CampaignViewSet, basename='campaign')
 router.register(r'support/messages', SupportMessageViewSet, basename='support-message')
 router.register(r'audit-logs', AuditLogViewSet, basename='audit-log')
 router.register(r'team/members', TeamMemberViewSet, basename='team-member')
+router.register(r'products', ProductViewSet, basename='product')
+router.register(r'orders', OrderViewSet, basename='order')
 
 urlpatterns = [
     path('', include(router.urls)),
