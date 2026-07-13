@@ -42,3 +42,5 @@ resend
 openai
 PyPDF2
 numpy
+daphne
+channels
