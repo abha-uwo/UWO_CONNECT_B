@@ -102,6 +102,7 @@ CORS_ALLOW_CREDENTIALS = True
 CSRF_TRUSTED_ORIGINS = [
     'https://aisaconnectback-anaqbuapb6c6apgy.centralindia-01.azurewebsites.net',
     'https://*.azurewebsites.net',
+    'https://*.azurestaticapps.net',
     'https://*.vercel.app',
     'http://localhost:3000',
     'http://localhost:3001',
