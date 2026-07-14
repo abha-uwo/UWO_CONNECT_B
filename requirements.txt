@@ -44,3 +44,4 @@ PyPDF2
 numpy
 firebase-admin
 daphne
+channels
