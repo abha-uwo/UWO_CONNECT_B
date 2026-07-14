@@ -24,8 +24,15 @@ env_path = os.path.join(BASE_DIR, '.env')
 load_dotenv(env_path, override=True)
 
 # Initialize Firebase Admin SDK
+import json
+
+firebase_sa_json = os.getenv('FIREBASE_SERVICE_ACCOUNT_JSON')
 firebase_sa_path = os.getenv('FIREBASE_SERVICE_ACCOUNT_PATH', '')
-if firebase_sa_path:
+
+if firebase_sa_json:
+    cred = credentials.Certificate(json.loads(firebase_sa_json))
+    firebase_admin.initialize_app(cred)
+elif firebase_sa_path:
     if not os.path.isabs(firebase_sa_path):
         firebase_sa_path = os.path.join(BASE_DIR, firebase_sa_path)
     if os.path.exists(firebase_sa_path):
