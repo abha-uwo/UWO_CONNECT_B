@@ -1,6 +1,6 @@
 from rest_framework import status, views, viewsets
 from rest_framework.response import Response
-from rest_framework_simplejwt.tokens import RefreshToken
+from firebase_admin import auth as firebase_auth
 from django.contrib.auth import authenticate
 from rest_framework.permissions import IsAuthenticated, IsAdminUser
 from rest_framework.decorators import action
@@ -58,94 +58,65 @@ class RegisterView(views.APIView):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class LoginView(views.APIView):
+    """Legacy login endpoint — kept for backward compatibility."""
     permission_classes = []
     authentication_classes = []
 
     def post(self, req):
-        email = req.data.get('email', '').lower().strip()
-        password = req.data.get('password', '')
-
-        if email == 'admin@uwo24.com' and password == 'admin123':
-            user, created = User.objects.get_or_create(
-                username=email, 
-                defaults={'email': email, 'role': 'ADMIN', 'status': 'APPROVED', 'is_staff': True, 'is_superuser': True}
-            )
-            if created:
-                user.set_password(password)
-                user.save()
-            elif not user.is_staff:
-                user.is_staff = True
-                user.is_superuser = True
-                user.save()
-            
-            refresh = RefreshToken.for_user(user)
-            return Response({
-                "token": str(refresh.access_token),
-                "user": {
-                    "id": str(user.id),
-                    "_id": str(user.id),
-                    "name": "System Admin",
-                    "email": user.email,
-                    "role": "ADMIN"
-                }
-            })
-
-        user = authenticate(username=email, password=password)
-        if not user:
-            return Response({"message": "Invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
-
-        if user.role == 'CLIENT' and user.status != 'APPROVED':
-            return Response({
-                "message": f"Account status: {user.status}. Please wait for admin approval."
-            }, status=status.HTTP_403_FORBIDDEN)
-
-        refresh = RefreshToken.for_user(user)
-        token = refresh.access_token
-        token['role'] = user.role
-        if user.client:
-            token['clientId'] = str(user.client.id)
-
-        return Response({
-            "user": {
-                "id": str(user.id),
-                "_id": str(user.id),
-                "name": f"{user.first_name} {user.last_name}".strip() or user.username,
-                "email": user.email,
-                "role": user.role,
-                "client": str(user.client.id) if user.client else None,
-                "clientId": str(user.client.id) if user.client else None
-            },
-            "token": str(token)
-        })
+        return Response({"message": "Please use Firebase authentication. This endpoint is deprecated."}, status=status.HTTP_400_BAD_REQUEST)
 
 @method_decorator(csrf_exempt, name='dispatch')
 class GoogleLoginView(views.APIView):
+    """Legacy Google login — kept for backward compatibility."""
     permission_classes = []
     authentication_classes = []
 
     def post(self, req):
-        access_token = req.data.get('access_token', '').strip()
-        if not access_token:
-            return Response({"message": "Access token is required"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"message": "Please use Firebase authentication. This endpoint is deprecated."}, status=status.HTTP_400_BAD_REQUEST)
+
+@method_decorator(csrf_exempt, name='dispatch')
+class GoogleClientIdView(views.APIView):
+    """Legacy Google Client ID endpoint — kept for backward compatibility."""
+    permission_classes = []
+    authentication_classes = []
+
+    def get(self, req):
+        return Response({"client_id": ""})
+
+@method_decorator(csrf_exempt, name='dispatch')
+class FirebaseLoginView(views.APIView):
+    """
+    Firebase Login/Register endpoint.
+    
+    Receives a Firebase ID token, verifies it, and:
+    - If user exists in Django DB: returns user data + the Firebase token
+    - If user doesn't exist: creates Django user (PENDING status) and returns 201
+    """
+    permission_classes = []
+    authentication_classes = []
+
+    def post(self, req):
+        id_token = req.data.get('id_token', '').strip()
+        if not id_token:
+            return Response({"message": "Firebase ID token is required"}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            google_res = requests.get(
-                f"https://www.googleapis.com/oauth2/v3/userinfo?access_token={access_token}",
-                timeout=10
-            )
-            if google_res.status_code != 200:
-                return Response({"message": "Invalid Google access token"}, status=status.HTTP_400_BAD_REQUEST)
-            
-            user_info = google_res.json()
+            decoded_token = firebase_auth.verify_id_token(id_token)
+        except firebase_auth.ExpiredIdTokenError:
+            return Response({"message": "Firebase token has expired"}, status=status.HTTP_401_UNAUTHORIZED)
+        except firebase_auth.InvalidIdTokenError:
+            return Response({"message": "Invalid Firebase token"}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            return Response({"message": f"Failed to connect to Google API: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({"message": f"Token verification failed: {str(e)}"}, status=status.HTTP_400_BAD_REQUEST)
 
-        email = user_info.get('email', '').lower().strip()
-        name = user_info.get('name', 'Google User').strip()
+        email = decoded_token.get('email', '').lower().strip()
+        name = req.data.get('name', decoded_token.get('name', '')).strip() or 'User'
+        firebase_uid = decoded_token.get('uid', '')
 
         if not email:
-            return Response({"message": "Failed to retrieve email from Google"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"message": "Failed to retrieve email from Firebase token"}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Check for admin
         if email == 'admin@uwo24.com':
             user, created = User.objects.get_or_create(
                 username=email, 
@@ -159,9 +130,8 @@ class GoogleLoginView(views.APIView):
                 user.is_superuser = True
                 user.save()
             
-            refresh = RefreshToken.for_user(user)
             return Response({
-                "token": str(refresh.access_token),
+                "token": id_token,
                 "user": {
                     "id": str(user.id),
                     "_id": str(user.id),
@@ -171,21 +141,17 @@ class GoogleLoginView(views.APIView):
                 }
             })
 
+        # Check if user exists
         user = User.objects.filter(email=email).first()
         if not user:
             user = User.objects.filter(username=email).first()
 
         if user:
+            # Existing user — check status
             if user.role == 'CLIENT' and user.status != 'APPROVED':
                 return Response({
                     "message": f"Account status: {user.status}. Please wait for admin approval."
                 }, status=status.HTTP_403_FORBIDDEN)
-
-            refresh = RefreshToken.for_user(user)
-            token = refresh.access_token
-            token['role'] = user.role
-            if user.client:
-                token['clientId'] = str(user.client.id)
 
             return Response({
                 "user": {
@@ -197,9 +163,10 @@ class GoogleLoginView(views.APIView):
                     "client": str(user.client.id) if user.client else None,
                     "clientId": str(user.client.id) if user.client else None
                 },
-                "token": str(token)
+                "token": id_token
             })
         else:
+            # New user — register
             invite_token = req.data.get('invite_token', '').strip()
             
             if invite_token:
@@ -228,11 +195,6 @@ class GoogleLoginView(views.APIView):
                 invite.is_used = True
                 invite.save()
                 
-                refresh = RefreshToken.for_user(user)
-                token = refresh.access_token
-                token['role'] = user.role
-                token['clientId'] = str(user.client.id)
-                
                 return Response({
                     "user": {
                         "id": str(user.id),
@@ -243,10 +205,11 @@ class GoogleLoginView(views.APIView):
                         "client": str(user.client.id),
                         "clientId": str(user.client.id)
                     },
-                    "token": str(token)
+                    "token": id_token
                 }, status=status.HTTP_201_CREATED)
             else:
-                client = Client.objects.create(business_name=f"{name}'s Business")
+                business_name = req.data.get('business_name', '').strip() or f"{name}'s Business"
+                client = Client.objects.create(business_name=business_name)
                 user = User.objects.create_user(
                     username=email,
                     email=email,
@@ -257,18 +220,9 @@ class GoogleLoginView(views.APIView):
                     client=client
                 )
                 return Response({
-                    "message": "User registered successfully with Google. Waiting for admin approval.",
+                    "message": "User registered successfully. Waiting for admin approval.",
                     "userId": str(user.id)
                 }, status=status.HTTP_201_CREATED)
-
-@method_decorator(csrf_exempt, name='dispatch')
-class GoogleClientIdView(views.APIView):
-    permission_classes = []
-    authentication_classes = []
-
-    def get(self, req):
-        client_id = os.environ.get('GOOGLE_CLIENT_ID', '').strip()
-        return Response({"client_id": client_id})
 
 class ClientViewSet(viewsets.ModelViewSet):
     queryset = Client.objects.all()

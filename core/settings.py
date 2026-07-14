@@ -13,6 +13,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+import firebase_admin
+from firebase_admin import credentials
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -20,6 +22,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Load .env
 env_path = os.path.join(BASE_DIR, '.env')
 load_dotenv(env_path, override=True)
+
+# Initialize Firebase Admin SDK
+firebase_sa_path = os.getenv('FIREBASE_SERVICE_ACCOUNT_PATH', '')
+if firebase_sa_path:
+    if not os.path.isabs(firebase_sa_path):
+        firebase_sa_path = os.path.join(BASE_DIR, firebase_sa_path)
+    if os.path.exists(firebase_sa_path):
+        cred = credentials.Certificate(firebase_sa_path)
+        firebase_admin.initialize_app(cred)
+    else:
+        print(f"[WARNING] Firebase service account file not found: {firebase_sa_path}")
+        print("[WARNING] Firebase authentication will not work until the file is provided.")
+else:
+    print("[WARNING] FIREBASE_SERVICE_ACCOUNT_PATH not set in .env")
+    print("[WARNING] Firebase authentication will not work until configured.")
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-*$y)ag^nhzi-8dw0z45l20c=8=v4_+xaf4kygub!7nxqq(#$yv')
@@ -62,27 +79,11 @@ AUTH_USER_MODEL = 'api.User'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'api.firebase_auth.FirebaseAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
-}
-
-from datetime import timedelta
-SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=1),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
-    'ROTATE_REFRESH_TOKENS': False,
-    'BLACKLIST_AFTER_ROTATION': True,
-    'ALGORITHM': 'HS256',
-    'SIGNING_KEY': os.getenv('JWT_SECRET', SECRET_KEY),
-    'VERIFYING_KEY': None,
-    'AUTH_HEADER_TYPES': ('Bearer',),
-    'USER_ID_FIELD': 'id',
-    'USER_ID_CLAIM': 'user_id',
-    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
-    'TOKEN_TYPE_CLAIM': 'token_type',
 }
 
 # Use MongoDB ObjectId as default PK for all models

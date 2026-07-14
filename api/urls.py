@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
-    RegisterView, LoginView, GoogleLoginView, GoogleClientIdView, ClientViewSet, AutomationViewSet, WorkflowViewSet, 
+    RegisterView, LoginView, GoogleLoginView, GoogleClientIdView, FirebaseLoginView, ClientViewSet, AutomationViewSet, WorkflowViewSet, 
     ContactViewSet, AdminStatsView, ClientStatsView, AdminAutomationsView, AdminMessagesView, 
     WhatsAppWebhookView, FacebookInstagramWebhookView, AdminUsersView, ProfileView, ClientMessagesView, 
     GlobalSettingsView, PlatformAssistantView, KnowledgeBaseView, TemplateViewSet, 
@@ -31,6 +31,7 @@ urlpatterns = [
     path('auth/login', LoginView.as_view(), name='login'),
     path('auth/google-login', GoogleLoginView.as_view(), name='google-login'),
     path('auth/google-client-id', GoogleClientIdView.as_view(), name='google-client-id'),
+    path('auth/firebase-login', FirebaseLoginView.as_view(), name='firebase-login'),
     path('auth/forgot-password/send-otp', ForgotPasswordSendOTPView.as_view(), name='forgot-password-send-otp'),
     path('auth/forgot-password/verify-otp', ForgotPasswordVerifyOTPView.as_view(), name='forgot-password-verify-otp'),
     path('auth/forgot-password/reset', ForgotPasswordResetView.as_view(), name='forgot-password-reset'),
