@@ -1350,14 +1350,14 @@ class ForgotPasswordSendOTPView(views.APIView):
       <table width="480" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.06);">
         <tr>
           <td style="background:linear-gradient(135deg,#16A34A,#059669);padding:36px 40px;text-align:center;">
-            <h1 style="color:#fff;margin:0;font-size:24px;font-weight:700;">Meta Connect</h1>
+            <h1 style="color:#fff;margin:0;font-size:24px;font-weight:700;">Uwo Connect</h1>
             <p style="color:rgba(255,255,255,0.8);margin:6px 0 0;font-size:13px;">Password Reset Request</p>
           </td>
         </tr>
         <tr>
           <td style="padding:40px;">
             <p style="color:#374151;font-size:15px;margin:0 0 20px;">Hi there,</p>
-            <p style="color:#374151;font-size:15px;margin:0 0 28px;">Use the OTP below to reset your Meta Connect password. This code expires in <strong>15 minutes</strong>.</p>
+            <p style="color:#374151;font-size:15px;margin:0 0 28px;">Use the OTP below to reset your Uwo Connect password. This code expires in <strong>15 minutes</strong>.</p>
             <div style="background:#f0fdf4;border:2px dashed #16A34A;border-radius:16px;padding:28px;text-align:center;margin:0 0 28px;">
               <p style="margin:0 0 8px;color:#6b7280;font-size:12px;font-weight:600;letter-spacing:2px;text-transform:uppercase;">Your OTP Code</p>
               <p style="margin:0;font-size:48px;font-weight:800;letter-spacing:12px;color:#16A34A;">{otp}</p>
@@ -1367,7 +1367,7 @@ class ForgotPasswordSendOTPView(views.APIView):
         </tr>
         <tr>
           <td style="background:#f9fafb;padding:20px 40px;text-align:center;border-top:1px solid #e5e7eb;">
-            <p style="color:#9ca3af;font-size:12px;margin:0;">© 2025 Meta Connect. All rights reserved.</p>
+            <p style="color:#9ca3af;font-size:12px;margin:0;">© 2025 Uwo Connect. All rights reserved.</p>
           </td>
         </tr>
       </table>
@@ -1377,9 +1377,9 @@ class ForgotPasswordSendOTPView(views.APIView):
         
         try:
             send_mail(
-                subject="Your Password Reset OTP - Meta Connect",
-                message=f"Your OTP for resetting your Meta Connect password is: {otp}.\nThis OTP is valid for 15 minutes.",
-                from_email=f"Meta Connect <{settings.EMAIL_HOST_USER}>" if settings.EMAIL_HOST_USER else settings.DEFAULT_FROM_EMAIL,
+                subject="Your Password Reset OTP - Uwo Connect",
+                message=f"Your OTP for resetting your Uwo Connect password is: {otp}.\nThis OTP is valid for 15 minutes.",
+                from_email=f"Uwo Connect <{settings.EMAIL_HOST_USER}>" if settings.EMAIL_HOST_USER else settings.DEFAULT_FROM_EMAIL,
                 recipient_list=[email],
                 html_message=html_body
             )
