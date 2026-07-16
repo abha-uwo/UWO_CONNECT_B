@@ -39,6 +39,8 @@ class IsApprovedUser(BasePermission):
             return request.user.status == 'APPROVED'
         return True
 
+from rest_framework_simplejwt.tokens import RefreshToken
+
 @method_decorator(csrf_exempt, name='dispatch')
 class RegisterView(views.APIView):
     permission_classes = []
@@ -48,22 +50,70 @@ class RegisterView(views.APIView):
         serializer = RegisterSerializer(data=req.data)
         if serializer.is_valid():
             user = serializer.save()
-            return Response({
-                "message": "User registered successfully. Waiting for admin approval.",
-                "userId": str(user.id)
-            }, status=status.HTTP_201_CREATED)
+            if user.status == 'APPROVED':
+                refresh = RefreshToken.for_user(user)
+                return Response({
+                    "user": {
+                        "id": str(user.id),
+                        "_id": str(user.id),
+                        "name": f"{user.first_name} {user.last_name}".strip() or user.username,
+                        "email": user.email,
+                        "role": user.role,
+                        "client": str(user.client.id) if user.client else None,
+                        "clientId": str(user.client.id) if user.client else None
+                    },
+                    "token": str(refresh.access_token)
+                }, status=status.HTTP_201_CREATED)
+            else:
+                return Response({
+                    "message": "User registered successfully. Waiting for admin approval.",
+                    "userId": str(user.id)
+                }, status=status.HTTP_201_CREATED)
             
         first_error = next(iter(serializer.errors.values()))[0]
         return Response({"message": str(first_error)}, status=status.HTTP_400_BAD_REQUEST)
 
 @method_decorator(csrf_exempt, name='dispatch')
 class LoginView(views.APIView):
-    """Legacy login endpoint — kept for backward compatibility."""
     permission_classes = []
     authentication_classes = []
 
     def post(self, req):
-        return Response({"message": "Please use Firebase authentication. This endpoint is deprecated."}, status=status.HTTP_400_BAD_REQUEST)
+        email = req.data.get('email', '').strip().lower()
+        password = req.data.get('password', '')
+
+        if not email or not password:
+            return Response({"message": "Email and password are required."}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = authenticate(username=email, password=password)
+        
+        if not user:
+            # Fallback to checking email since authenticate uses username
+            user_obj = User.objects.filter(email=email).first()
+            if user_obj and user_obj.check_password(password):
+                user = user_obj
+        
+        if not user:
+            return Response({"message": "Invalid email or password."}, status=status.HTTP_401_UNAUTHORIZED)
+
+        if user.role == 'CLIENT' and user.status != 'APPROVED':
+            return Response({
+                "message": f"Account status: {user.status}. Please wait for admin approval."
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            "user": {
+                "id": str(user.id),
+                "_id": str(user.id),
+                "name": f"{user.first_name} {user.last_name}".strip() or user.username,
+                "email": user.email,
+                "role": user.role,
+                "client": str(user.client.id) if user.client else None,
+                "clientId": str(user.client.id) if user.client else None
+            },
+            "token": str(refresh.access_token)
+        })
 
 @method_decorator(csrf_exempt, name='dispatch')
 class GoogleLoginView(views.APIView):
