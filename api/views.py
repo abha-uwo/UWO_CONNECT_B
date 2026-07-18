@@ -180,8 +180,9 @@ class FirebaseLoginView(views.APIView):
                 user.is_superuser = True
                 user.save()
             
+            refresh = RefreshToken.for_user(user)
             return Response({
-                "token": id_token,
+                "token": str(refresh.access_token),
                 "user": {
                     "id": str(user.id),
                     "_id": str(user.id),
@@ -213,7 +214,7 @@ class FirebaseLoginView(views.APIView):
                     "client": str(user.client.id) if user.client else None,
                     "clientId": str(user.client.id) if user.client else None
                 },
-                "token": id_token
+                "token": str(RefreshToken.for_user(user).access_token)
             })
         else:
             # New user — register
@@ -255,7 +256,7 @@ class FirebaseLoginView(views.APIView):
                         "client": str(user.client.id),
                         "clientId": str(user.client.id)
                     },
-                    "token": id_token
+                    "token": str(RefreshToken.for_user(user).access_token)
                 }, status=status.HTTP_201_CREATED)
             else:
                 business_name = req.data.get('business_name', '').strip() or f"{name}'s Business"
