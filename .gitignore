@@ -150,3 +150,7 @@ cython_debug/
 
 # PyCharm
 .idea/
+
+firebase-service-account.json
+.env
+*.json.key
