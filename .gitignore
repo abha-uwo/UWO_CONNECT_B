@@ -154,3 +154,7 @@ cython_debug/
 firebase-service-account.json
 .env
 *.json.key
+
+.git-rewrite/
+firebase-service-account.json
+.env
