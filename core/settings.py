@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+import sys
 import firebase_admin
 from firebase_admin import credentials
 
@@ -46,12 +47,13 @@ else:
     print("[WARNING] Firebase authentication will not work until configured.")
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-*$y)ag^nhzi-8dw0z45l20c=8=v4_+xaf4kygub!7nxqq(#$yv')
+SECRET_KEY = os.getenv('SECRET_KEY')
+if not SECRET_KEY:
+    print('[ERROR] SECRET_KEY not set. Exiting.')
+    sys.exit(1)
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', 'True') == 'True'
-
-ALLOWED_HOSTS = ['*']
+DEBUG = os.getenv('DEBUG', 'False') == 'True'
+ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',') if os.getenv('ALLOWED_HOSTS') else []
 
 # Application definition
 INSTALLED_APPS = [
