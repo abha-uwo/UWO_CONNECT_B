@@ -97,7 +97,7 @@ AUTH_USER_MODEL = 'api.User'
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
-        'api.firebase_auth.FirebaseAuthentication',
+        'api.services.firebase_auth.FirebaseAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',

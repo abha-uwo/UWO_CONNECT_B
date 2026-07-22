@@ -1,6 +1,15 @@
-import os, django, requests; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings'); django.setup(); from api.whatsapp import send_whatsapp_message; 
-try:
-    res = send_whatsapp_message('15556516125', '1125247290680369', '917694045090', 'Hello from test script')
+import os, django; os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings'); django.setup()
+from api.models import Client
+from api.services.meta_webhook_service import MetaWebhookService
+
+client = Client.objects.first()
+if client:
+    res = MetaWebhookService.send_whatsapp_message(
+        client=client,
+        to_number='917694045090',
+        text_body='Hello from test script',
+        phone_number_id=client.whatsapp_phone_number_id or '15556516125'
+    )
     print('Result:', res)
-except Exception as e:
-    print('Error:', e)
+else:
+    print('No client found to test send')

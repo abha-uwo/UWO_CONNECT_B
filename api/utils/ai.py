@@ -8,7 +8,7 @@ def get_embedding(text, model="text-embedding-ada-002"):
     if not openai.api_key:
         return []
     try:
-        text = text.replace("\n", " ")
+        text = text.replace("\nfrom ..repositories.knowledge_repository import KnowledgeRepository\n\n", " ")
         response = openai.embeddings.create(input=[text], model=model)
         return response.data[0].embedding
     except Exception as e:
@@ -65,7 +65,7 @@ def process_pdf_and_store(client, document):
     for chunk_text_data in chunks:
         embedding = get_embedding(chunk_text_data)
         if embedding:
-            KnowledgeChunk.objects.create(
+            KnowledgeRepository.create_knowledgechunk(
                 client=client,
                 document=document,
                 content=chunk_text_data,
@@ -79,7 +79,7 @@ def retrieve_relevant_chunks(client, query, top_k=3):
     if not query_embedding:
         return []
         
-    chunks = KnowledgeChunk.objects.filter(client=client)
+    chunks = KnowledgeRepository.filter_chunks(client=client)
     scored_chunks = []
     
     for chunk in chunks:

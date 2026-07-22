@@ -49,7 +49,7 @@ class InboxConsumer(AsyncWebsocketConsumer):
     @sync_to_async
     def get_user(self, user_id):
         try:
-            return User.objects.get(id=user_id)
+            return UserRepository.get_user(id=user_id)
         except User.DoesNotExist:
             return None
 
@@ -112,7 +112,7 @@ class TeamChatConsumer(AsyncWebsocketConsumer):
     @sync_to_async
     def get_user(self, user_id):
         try:
-            return User.objects.get(id=user_id)
+            return UserRepository.get_user(id=user_id)
         except User.DoesNotExist:
             return None
 
