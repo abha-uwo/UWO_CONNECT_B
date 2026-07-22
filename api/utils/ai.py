@@ -2,6 +2,7 @@ import os
 import openai
 import PyPDF2
 import numpy as np
+from ..repositories.knowledge_repository import KnowledgeRepository
 
 def get_embedding(text, model="text-embedding-ada-002"):
     openai.api_key = os.environ.get("OPENAI_API_KEY")

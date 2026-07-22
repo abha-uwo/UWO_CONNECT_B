@@ -5,6 +5,7 @@ import jwt
 from django.conf import settings
 from asgiref.sync import sync_to_async
 from .models import User
+from .repositories.user_repository import UserRepository
 
 class InboxConsumer(AsyncWebsocketConsumer):
     async def connect(self):

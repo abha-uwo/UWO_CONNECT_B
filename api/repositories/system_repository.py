@@ -14,14 +14,17 @@ class SystemRepository:
         return AuditLog.objects.filter(**kwargs)
 
     @staticmethod
-    def get_all_systems():
-        return System.objects.all()
+    def filter_globalsettings(**kwargs):
+        return GlobalSetting.objects.filter(**kwargs)
+
+    @staticmethod
+    def get_all_globalsettings():
+        return GlobalSetting.objects.all()
 
     @staticmethod
     def get_all():
-        return System.objects.all()
+        return GlobalSetting.objects.all()
 
     @staticmethod
     def get_all_auditlogs():
-        from ..models import AuditLog
         return AuditLog.objects.all()
