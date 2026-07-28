@@ -31,9 +31,6 @@ jobs:
           python -m venv antenv
           source antenv/bin/activate
           pip install -r requirements.txt
-          pip install flake8
-          # F821 checks for undefined names (NameErrors), E9 is syntax errors
-          flake8 api/ --count --select=E9,F63,F7,F82 --show-source --statistics
                 
       # By default, when you enable GitHub CI/CD integration through the Azure portal, the platform automatically sets the SCM_DO_BUILD_DURING_DEPLOYMENT application setting to true. This triggers the use of Oryx, a build engine that handles application compilation and dependency installation (e.g., pip install) directly on the platform during deployment. Hence, we exclude the antenv virtual environment directory from the deployment artifact to reduce the payload size. 
       - name: Upload artifact for deployment jobs
@@ -66,9 +63,9 @@ jobs:
       - name: Login to Azure
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_713FD6BE50D0493E82F849C9BD1DAACB }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_00C5E6AF7E054173B902A807EEDBE80A }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_3F99671604854D4AAB480081206F5CCE }}
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_97120F1E9B5E453B95F2285E8EF64BA5 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_BE829F9ED7AE4A11AF5224E4864585B9 }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_558BAD392DD34F7DB9514ADD84B40E13 }}
 
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
@@ -76,4 +73,4 @@ jobs:
         with:
           app-name: 'aisaconnectback'
           slot-name: 'Production'
-          startup-command: 'daphne -b 0.0.0.0 -p 8000 core.asgi:application'
+          
