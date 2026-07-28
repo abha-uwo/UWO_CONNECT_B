@@ -121,6 +121,8 @@ CSRF_TRUSTED_ORIGINS = [
     'https://*.azurewebsites.net',
     'https://*.azurestaticapps.net',
     'https://*.vercel.app',
+    'https://uwoconnect.aisa24.com',   # ✅ Live frontend domain
+    'https://*.aisa24.com',            # ✅ Wildcard for all subdomains
     'http://localhost:3000',
     'http://localhost:3001',
     'http://127.0.0.1:3000',
