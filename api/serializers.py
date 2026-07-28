@@ -1,5 +1,11 @@
 from rest_framework import serializers
 from .models import User, Client, Automation, Workflow, GlobalSetting, Contact, Template, Campaign, SupportMessage, AuditLog, TeamInvite, KnowledgeDocument, TeamMessage, Product, Order
+from .repositories.contact_repository import ContactRepository
+from .repositories.workflow_repository import WorkflowRepository
+from .repositories.automation_repository import AutomationRepository
+from .repositories.user_repository import UserRepository
+from .repositories.team_invite_repository import TeamInviteRepository
+from .repositories.client_repository import ClientRepository
 
 class ObjectIdField(serializers.Field):
     """
@@ -29,15 +35,15 @@ class ClientSerializer(serializers.ModelSerializer):
 
     def get_total_contacts(self, obj):
         from .models import Contact
-        return Contact.objects.filter(client=obj).count()
+        return ContactRepository.filter_contacts(client=obj).count()
 
     def get_total_workflows(self, obj):
         from .models import Workflow
-        return Workflow.objects.filter(client=obj).count()
+        return WorkflowRepository.filter_workflows(client=obj).count()
 
     def get_total_bots(self, obj):
         from .models import Automation
-        return Automation.objects.filter(client=obj).count()
+        return AutomationRepository.filter_automations(client=obj).count()
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -89,7 +95,7 @@ class RegisterSerializer(serializers.Serializer):
 
     def validate_email(self, value):
         email = value.lower().strip()
-        if User.objects.filter(email=email).exists() or User.objects.filter(username=email).exists():
+        if UserRepository.filter_users(email=email).exists() or UserRepository.filter_users(username=email).exists():
             raise serializers.ValidationError("A user with this email already exists.")
         return email
 
@@ -100,7 +106,7 @@ class RegisterSerializer(serializers.Serializer):
 
         if invite_token:
             from django.utils import timezone
-            invite = TeamInvite.objects.filter(
+            invite = TeamInviteRepository.filter_teaminvites(
                 token=invite_token, 
                 is_used=False, 
                 expires_at__gt=timezone.now()
@@ -109,7 +115,7 @@ class RegisterSerializer(serializers.Serializer):
             if not invite:
                 raise serializers.ValidationError({"invite_token": "Invalid or expired invite token."})
                 
-            user = User.objects.create_user(
+            user = UserRepository.create_user_user(
                 username=email,
                 email=email,
                 password=validated_data['password'],
@@ -124,9 +130,9 @@ class RegisterSerializer(serializers.Serializer):
             invite.save()
             return user
         else:
-            client = Client.objects.create(business_name=business_name)
+            client = ClientRepository.create_client(business_name=business_name)
     
-            user = User.objects.create_user(
+            user = UserRepository.create_user_user(
                 username=email,
                 email=email,
                 password=validated_data['password'],

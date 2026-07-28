@@ -1,5 +1,8 @@
-from .models import WorkflowSession, Workflow
+from ..models import WorkflowSession, Workflow
 import json
+from ..repositories.automation_repository import WorkflowSessionRepository
+from ..repositories.workflow_repository import WorkflowRepository
+from ..repositories.contact_repository import ContactRepository
 
 class WorkflowEngine:
     @staticmethod
@@ -22,7 +25,7 @@ class WorkflowEngine:
         channel_upper = channel.upper()
 
         # 1. Check for active session
-        session = WorkflowSession.objects.filter(
+        session = WorkflowSessionRepository.filter_workflowsessions(
             client=client, 
             phone_number=phone_number, 
             is_active=True
@@ -42,7 +45,7 @@ class WorkflowEngine:
                 return WorkflowEngine._advance_session(session, incoming_text)
 
         # 2. Check for new workflow triggers
-        workflows = Workflow.objects.filter(client=client, enabled=True, trigger_type='KEYWORD')
+        workflows = WorkflowRepository.filter_workflows(client=client, enabled=True, trigger_type='KEYWORD')
         for wf in workflows:
             wf_channels = wf.channels or []
             if len(wf_channels) > 0 and channel_upper not in wf_channels:
@@ -77,7 +80,7 @@ class WorkflowEngine:
             return None
 
         # Create session
-        session = WorkflowSession.objects.create(
+        session = WorkflowSessionRepository.create_workflowsession(
             client=client,
             phone_number=phone_number,
             workflow=workflow,
@@ -95,7 +98,7 @@ class WorkflowEngine:
         
         # Get contact for checking conditions
         from .models import Contact
-        contact = Contact.objects.filter(client=session.client, platform_id=session.phone_number).first()
+        contact = ContactRepository.filter_contacts(client=session.client, platform_id=session.phone_number).first()
 
         messages_to_send = []
         current_node_id = session.current_node_id

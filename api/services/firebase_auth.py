@@ -1,3 +1,6 @@
+from ..repositories.user_repository import UserRepository
+from ..integrations.firebase_integration import FirebaseIntegration
+
 """
 Firebase Authentication for Django REST Framework.
 
@@ -30,7 +33,7 @@ class FirebaseAuthentication(authentication.BaseAuthentication):
             return None
 
         try:
-            decoded_token = firebase_auth.verify_id_token(token)
+            decoded_token = FirebaseIntegration.verify_id_token(token)
         except firebase_auth.ExpiredIdTokenError:
             raise exceptions.AuthenticationFailed('Firebase token has expired.')
         except firebase_auth.InvalidIdTokenError:
@@ -48,9 +51,9 @@ class FirebaseAuthentication(authentication.BaseAuthentication):
             raise exceptions.AuthenticationFailed('Firebase token missing uid or email.')
 
         # Look up the Django user by email (username is also email in this system)
-        user = User.objects.filter(email=email).first()
+        user = UserRepository.filter_users(email=email).first()
         if not user:
-            user = User.objects.filter(username=email).first()
+            user = UserRepository.filter_users(username=email).first()
 
         if not user:
             # User hasn't registered via /api/auth/firebase-login yet
