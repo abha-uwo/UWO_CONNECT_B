@@ -115,7 +115,7 @@ class RegisterSerializer(serializers.Serializer):
             if not invite:
                 raise serializers.ValidationError({"invite_token": "Invalid or expired invite token."})
                 
-            user = UserRepository.create_user_user(
+            user = User.objects.create_user(
                 username=email,
                 email=email,
                 password=validated_data['password'],
@@ -130,9 +130,9 @@ class RegisterSerializer(serializers.Serializer):
             invite.save()
             return user
         else:
-            client = ClientRepository.create_client(business_name=business_name)
+            client = Client.objects.create(business_name=business_name)
     
-            user = UserRepository.create_user_user(
+            user = User.objects.create_user(
                 username=email,
                 email=email,
                 password=validated_data['password'],
