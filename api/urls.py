@@ -7,7 +7,8 @@ from .views import (
     GlobalSettingsView, PlatformAssistantView, KnowledgeBaseView, TemplateViewSet, 
     CampaignViewSet, ForgotPasswordSendOTPView, ForgotPasswordVerifyOTPView, ForgotPasswordResetView,
     SupportMessageViewSet, AdminImpersonateView, AuditLogViewSet,
-    SuggestDraftView, TeamMemberViewSet, TeamInviteView, TeamChatView, ProductViewSet, OrderViewSet
+    SuggestDraftView, TeamMemberViewSet, TeamInviteView, TeamChatView, ProductViewSet, OrderViewSet,
+    WhatsAppEmbeddedSignupView
 )
 
 router = DefaultRouter()
@@ -35,6 +36,7 @@ urlpatterns = [
     path('auth/forgot-password/send-otp', ForgotPasswordSendOTPView.as_view(), name='forgot-password-send-otp'),
     path('auth/forgot-password/verify-otp', ForgotPasswordVerifyOTPView.as_view(), name='forgot-password-verify-otp'),
     path('auth/forgot-password/reset', ForgotPasswordResetView.as_view(), name='forgot-password-reset'),
+    path('auth/whatsapp/embedded-signup', WhatsAppEmbeddedSignupView.as_view(), name='whatsapp-embedded-signup'),
     path('profile', ProfileView.as_view(), name='profile'),
     path('messages/', ClientMessagesView.as_view(), name='client-messages'),
     path('messages/suggest_draft/', SuggestDraftView.as_view(), name='suggest-draft'),

@@ -40,6 +40,7 @@ class Client(models.Model):
     # Config as JSON
     facebook_config = models.JSONField(default=dict, blank=True)
     instagram_config = models.JSONField(default=dict, blank=True)
+    whatsapp_config = models.JSONField(default=dict, blank=True)
     settings = models.JSONField(default=dict, blank=True)
     
     # Enterprise Features
