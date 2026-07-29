@@ -138,10 +138,20 @@ class MetaWebhookService:
                 platform = None
                 
                 if data.get('object') == 'page':
-                    client = ClientRepository.filter_clients(facebook_config__page_id=recipient_id).first()
+                    all_clients = ClientRepository.get_all_clients()
+                    for c in all_clients:
+                        fc = c.facebook_config or {}
+                        if str(fc.get('page_id', '')) == str(recipient_id):
+                            client = c
+                            break
                     platform = 'FACEBOOK'
                 elif data.get('object') == 'instagram':
-                    client = ClientRepository.filter_clients(instagram_config__instagram_business_id=recipient_id).first()
+                    all_clients = ClientRepository.get_all_clients()
+                    for c in all_clients:
+                        ic = c.instagram_config or {}
+                        if str(ic.get('instagram_business_id', '')) == str(recipient_id):
+                            client = c
+                            break
                     platform = 'INSTAGRAM'
                 
                 if not client:
