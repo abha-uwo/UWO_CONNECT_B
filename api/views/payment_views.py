@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework import status
 
 from api.models import PaymentOrder, Client, Log
-from api.services.cashfree_service import CashfreeService
+from api.services.razorpay_service import RazorpayService
 
 logger = logging.getLogger(__name__)
 
@@ -43,13 +43,29 @@ class CreatePaymentOrderView(APIView):
             billing_cycle = 'MONTHLY'
 
         amount = PLAN_PRICES[plan][billing_cycle]
-        order_id = f"order_cf_{user.client.id}_{int(time.time())}"
+        receipt_id = f"rcpt_{user.client.id}_{int(time.time())}"
 
-        # Save initial order
+        # Create Razorpay Order
+        rzp_service = RazorpayService()
+        rzp_response = rzp_service.create_order(
+            amount_in_inr=amount,
+            receipt_id=receipt_id,
+            notes={
+                'client_id': user.client.id,
+                'user_email': user.email or '',
+                'plan': plan,
+                'billing_cycle': billing_cycle
+            }
+        )
+
+        razorpay_order_id = rzp_response.get('razorpay_order_id')
+
+        # Save Order Entry
         payment_order = PaymentOrder.objects.create(
             client=user.client,
             user=user,
-            order_id=order_id,
+            order_id=receipt_id,
+            razorpay_order_id=razorpay_order_id,
             amount=amount,
             currency='INR',
             plan=plan,
@@ -57,33 +73,19 @@ class CreatePaymentOrderView(APIView):
             status='PENDING'
         )
 
-        # Call Cashfree API
-        cf_service = CashfreeService()
-        return_url = request.data.get('return_url', 'http://localhost:3000/client/settings?order_id={order_id}')
-        
-        cf_response = cf_service.create_order(
-            order_id=order_id,
-            amount=amount,
-            customer_id=user.id,
-            customer_email=user.email,
-            customer_phone=user.client.phone_number or getattr(user, 'phone_number', None),
-            customer_name=user.get_full_name() or user.username,
-            return_url=return_url
-        )
-
-        payment_session_id = cf_response.get('payment_session_id')
-        payment_order.payment_session_id = payment_session_id
-        payment_order.save()
-
         return Response({
-            'order_id': order_id,
-            'payment_session_id': payment_session_id,
-            'cf_environment': cf_response.get('cf_environment', 'TEST'),
+            'order_id': receipt_id,
+            'razorpay_order_id': razorpay_order_id,
+            'razorpay_key_id': rzp_response.get('razorpay_key_id'),
             'amount': amount,
+            'amount_paise': rzp_response.get('amount'),
             'currency': 'INR',
             'plan': plan,
             'billing_cycle': billing_cycle,
-            'is_mock': cf_response.get('is_mock', False)
+            'is_mock': rzp_response.get('is_mock', False),
+            'customer_name': user.get_full_name() or user.username,
+            'customer_email': user.email or '',
+            'customer_phone': user.client.phone_number or getattr(user, 'phone_number', '') or ''
         }, status=status.HTTP_201_CREATED)
 
 
@@ -96,36 +98,50 @@ class VerifyPaymentView(APIView):
             return Response({'error': 'No client associated with user'}, status=status.HTTP_400_BAD_REQUEST)
 
         order_id = request.data.get('order_id')
-        if not order_id:
-            return Response({'error': 'order_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+        razorpay_order_id = request.data.get('razorpay_order_id')
+        razorpay_payment_id = request.data.get('razorpay_payment_id')
+        razorpay_signature = request.data.get('razorpay_signature')
+        force_mock_success = request.data.get('force_mock_success', False)
 
         try:
-            payment_order = PaymentOrder.objects.get(order_id=order_id, client=user.client)
+            if order_id:
+                payment_order = PaymentOrder.objects.get(order_id=order_id, client=user.client)
+            elif razorpay_order_id:
+                payment_order = PaymentOrder.objects.get(razorpay_order_id=razorpay_order_id, client=user.client)
+            else:
+                return Response({'error': 'order_id or razorpay_order_id required'}, status=status.HTTP_400_BAD_REQUEST)
         except PaymentOrder.DoesNotExist:
-            return Response({'error': 'Payment order not found'}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'error': 'Payment order record not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        cf_service = CashfreeService()
-        status_resp = cf_service.get_order_status(order_id)
-        order_status = status_resp.get('order_status', 'PENDING')
+        rzp_service = RazorpayService()
 
-        if order_status == 'PAID' or request.data.get('force_mock_success') is True:
+        # Check signature verification
+        is_valid = force_mock_success or rzp_service.verify_signature(
+            razorpay_order_id=razorpay_order_id or payment_order.razorpay_order_id,
+            razorpay_payment_id=razorpay_payment_id,
+            razorpay_signature=razorpay_signature
+        )
+
+        if is_valid:
             payment_order.status = 'PAID'
-            payment_order.cf_payment_id = status_resp.get('cf_payment_id', f'cf_pay_{int(time.time())}')
-            payment_order.payment_method = status_resp.get('payment_method', 'Cashfree')
+            payment_order.razorpay_payment_id = razorpay_payment_id or f"pay_mock_{int(time.time())}"
+            payment_order.razorpay_signature = razorpay_signature or 'mock_sig'
+            payment_order.cf_payment_id = payment_order.razorpay_payment_id
+            payment_order.payment_method = 'Razorpay'
             payment_order.save()
 
-            # Upgrade Client Plan
+            # Upgrade Client Workspace Plan
             client = payment_order.client
             client.plan = payment_order.plan
             client.status = 'ACTIVE'
             client.save()
 
-            # Log system event
+            # Audit Log
             Log.objects.create(
                 client=client,
                 user=user,
                 action='SUBSCRIPTION_UPGRADED',
-                details=f"Upgraded to {payment_order.plan} ({payment_order.billing_cycle}) via Cashfree Order #{order_id}"
+                details=f"Upgraded to {payment_order.plan} ({payment_order.billing_cycle}) via Razorpay Order #{payment_order.order_id}"
             )
 
             return Response({
@@ -133,25 +149,17 @@ class VerifyPaymentView(APIView):
                 'message': f'Subscription upgraded successfully to {payment_order.plan}!',
                 'plan': client.plan,
                 'status': 'PAID',
-                'order_id': order_id
+                'order_id': payment_order.order_id,
+                'razorpay_payment_id': payment_order.razorpay_payment_id
             }, status=status.HTTP_200_OK)
-
-        elif order_status in ['FAILED', 'CANCELLED', 'EXPIRED']:
-            payment_order.status = order_status
+        else:
+            payment_order.status = 'FAILED'
             payment_order.save()
             return Response({
                 'success': False,
-                'message': f'Payment {order_status.lower()}',
-                'status': order_status,
-                'order_id': order_id
+                'message': 'Razorpay signature verification failed.',
+                'status': 'FAILED'
             }, status=status.HTTP_400_BAD_REQUEST)
-        else:
-            return Response({
-                'success': False,
-                'message': 'Payment is still pending',
-                'status': 'PENDING',
-                'order_id': order_id
-            }, status=status.HTTP_200_OK)
 
 
 class PaymentHistoryView(APIView):
@@ -166,44 +174,41 @@ class PaymentHistoryView(APIView):
         orders_data = [{
             'id': o.id,
             'order_id': o.order_id,
+            'razorpay_order_id': o.razorpay_order_id,
+            'razorpay_payment_id': o.razorpay_payment_id or o.cf_payment_id,
             'amount': str(o.amount),
             'currency': o.currency,
             'plan': o.plan,
             'billing_cycle': o.billing_cycle,
             'status': o.status,
-            'cf_payment_id': o.cf_payment_id,
-            'payment_method': o.payment_method,
+            'payment_method': o.payment_method or 'Razorpay',
             'created_at': o.created_at.isoformat(),
         } for o in orders]
 
         return Response({'orders': orders_data}, status=status.HTTP_200_OK)
 
 
-class CashfreeWebhookView(APIView):
+class RazorpayWebhookView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
         payload = request.data
-        logger.info(f"Cashfree Webhook Received: {payload}")
+        logger.info(f"Razorpay Webhook Received: {payload}")
         
-        # Extract order details from webhook body
-        data = payload.get('data', {})
-        order_data = data.get('order', {})
-        payment_data = data.get('payment', {})
-        
-        order_id = order_data.get('order_id')
-        payment_status = payment_data.get('payment_status') or payload.get('type')
+        event = payload.get('event')
+        entity = payload.get('payload', {}).get('payment', {}).get('entity', {})
+        razorpay_order_id = entity.get('order_id')
+        razorpay_payment_id = entity.get('id')
 
-        if order_id and (payment_status == 'SUCCESS' or 'SUCCESS' in str(payment_status)):
+        if razorpay_order_id and event in ['payment.captured', 'order.paid']:
             try:
-                payment_order = PaymentOrder.objects.get(order_id=order_id)
+                payment_order = PaymentOrder.objects.get(razorpay_order_id=razorpay_order_id)
                 if payment_order.status != 'PAID':
                     payment_order.status = 'PAID'
-                    payment_order.cf_payment_id = payment_data.get('cf_payment_id', '')
-                    payment_order.payment_method = payment_data.get('payment_group', 'Online')
+                    payment_order.razorpay_payment_id = razorpay_payment_id
+                    payment_order.payment_method = entity.get('method', 'Razorpay')
                     payment_order.save()
 
-                    # Upgrade Client Plan
                     client = payment_order.client
                     client.plan = payment_order.plan
                     client.status = 'ACTIVE'
@@ -213,9 +218,12 @@ class CashfreeWebhookView(APIView):
                         client=client,
                         user=payment_order.user,
                         action='SUBSCRIPTION_UPGRADED_WEBHOOK',
-                        details=f"Upgraded to {payment_order.plan} via Cashfree Webhook for Order #{order_id}"
+                        details=f"Upgraded to {payment_order.plan} via Razorpay Webhook for Order #{razorpay_order_id}"
                     )
             except PaymentOrder.DoesNotExist:
-                logger.warning(f"Webhook received for unknown order_id: {order_id}")
+                logger.warning(f"Razorpay Webhook received for unknown order_id: {razorpay_order_id}")
 
         return Response({'status': 'OK'}, status=status.HTTP_200_OK)
+
+# Alias for backward compatibility
+CashfreeWebhookView = RazorpayWebhookView

@@ -8,7 +8,7 @@ from .views import (
     CampaignViewSet, ForgotPasswordSendOTPView, ForgotPasswordVerifyOTPView, ForgotPasswordResetView,
     SupportMessageViewSet, AdminImpersonateView, AuditLogViewSet,
     SuggestDraftView, TeamMemberViewSet, TeamInviteView, TeamChatView, ProductViewSet, OrderViewSet,
-    CreatePaymentOrderView, VerifyPaymentView, PaymentHistoryView, CashfreeWebhookView,
+    CreatePaymentOrderView, VerifyPaymentView, PaymentHistoryView, CashfreeWebhookView, RazorpayWebhookView,
     WhatsAppEmbeddedSignupView
 )
 
@@ -55,10 +55,10 @@ urlpatterns = [
     path('knowledge/', KnowledgeBaseView.as_view(), name='knowledge-base'),
     path('knowledge/<str:pk>/', KnowledgeBaseView.as_view(), name='knowledge-base-detail'),
     path('admin/impersonate', AdminImpersonateView.as_view(), name='admin-impersonate'),
-    # Cashfree Payments
+    # Razorpay / Cashfree Payments
     path('payments/create-order', CreatePaymentOrderView.as_view(), name='payment-create-order'),
     path('payments/verify-order', VerifyPaymentView.as_view(), name='payment-verify-order'),
     path('payments/history', PaymentHistoryView.as_view(), name='payment-history'),
-    path('payments/webhook', CashfreeWebhookView.as_view(), name='payment-webhook'),
+    path('payments/webhook', RazorpayWebhookView.as_view(), name='payment-webhook'),
 ]
 
