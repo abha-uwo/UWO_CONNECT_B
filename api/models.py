@@ -4,6 +4,7 @@ from django.contrib.auth.models import AbstractUser
 class Client(models.Model):
     PLAN_CHOICES = [
         ('FREE', 'Free'),
+        ('STARTER', 'Starter'),
         ('GROWTH', 'Growth'),
         ('ENTERPRISE', 'Enterprise'),
     ]
@@ -381,5 +382,40 @@ class Order(models.Model):
 
     def __str__(self):
         return f"Order #{self.id} for {self.contact.name or self.contact.phone_number}"
+
+
+class PaymentOrder(models.Model):
+    PLAN_CHOICES = [
+        ('STARTER', 'Starter'),
+        ('GROWTH', 'Growth'),
+        ('ENTERPRISE', 'Enterprise'),
+    ]
+    CYCLE_CHOICES = [
+        ('MONTHLY', 'Monthly'),
+        ('ANNUAL', 'Annual'),
+    ]
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('PAID', 'Paid'),
+        ('FAILED', 'Failed'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='payment_orders')
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='payment_orders')
+    order_id = models.CharField(max_length=100, unique=True)
+    payment_session_id = models.TextField(null=True, blank=True)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    currency = models.CharField(max_length=10, default='INR')
+    plan = models.CharField(max_length=20, choices=PLAN_CHOICES)
+    billing_cycle = models.CharField(max_length=10, choices=CYCLE_CHOICES, default='MONTHLY')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    cf_payment_id = models.CharField(max_length=100, null=True, blank=True)
+    payment_method = models.CharField(max_length=50, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"PaymentOrder {self.order_id} - {self.client.business_name} ({self.status})"
+
 
 

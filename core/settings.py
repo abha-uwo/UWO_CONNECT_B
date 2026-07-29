@@ -237,3 +237,9 @@ if EMAIL_HOST_USER:
 else:
     # Fallback: print to console if no email credentials set
     EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+
+# Cashfree Payment Gateway Settings
+CASHFREE_APP_ID = os.getenv('CASHFREE_APP_ID', '')
+CASHFREE_SECRET_KEY = os.getenv('CASHFREE_SECRET_KEY', '')
+CASHFREE_ENV = os.getenv('CASHFREE_ENV', 'TEST')
+

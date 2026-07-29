@@ -7,3 +7,5 @@ from .knowledge_views import *
 from .webhook_views import *
 from .team_views import *
 from .commerce_views import *
+from .payment_views import *
+
