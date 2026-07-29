@@ -167,7 +167,7 @@ class AdminUsersView(APIView):
 
     def patch(self, request, pk):
         try:
-            user = UserRepository.get_user(pk=pk, role='CLIENT')
+            user = User.objects.get(id=pk, role='CLIENT')
             status = request.data.get('status')
             if status in ['APPROVED', 'REJECTED', 'PENDING', 'SUSPENDED']:
                 user.status = status
@@ -181,7 +181,7 @@ class AdminUsersView(APIView):
         # ── Delete a single user by pk ──────────────────────────────
         if pk:
             try:
-                user = UserRepository.get_user(pk=pk, role='CLIENT')
+                user = User.objects.get(id=pk, role='CLIENT')
                 if user.client:
                     user.client.delete()   # cascade removes Client data
                 user.delete()
