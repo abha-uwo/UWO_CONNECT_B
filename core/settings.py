@@ -53,7 +53,16 @@ if not SECRET_KEY:
     sys.exit(1)
 
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '').split(',') if os.getenv('ALLOWED_HOSTS') else []
+_allowed_hosts_env = os.getenv('ALLOWED_HOSTS', '')
+ALLOWED_HOSTS = _allowed_hosts_env.split(',') if _allowed_hosts_env else [
+    'localhost',
+    '127.0.0.1',
+    '169.254.130.3',  # Azure internal health check IP
+    'aisaconnectback-anaqbuapb6c6apgy.centralindia-01.azurewebsites.net',
+]
+# Always add Azure internal health check IP to avoid DisallowedHost errors
+if '169.254.130.3' not in ALLOWED_HOSTS and '*' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('169.254.130.3')
 
 # Application definition
 INSTALLED_APPS = [
