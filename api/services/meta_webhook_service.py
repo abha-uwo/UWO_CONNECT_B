@@ -126,9 +126,12 @@ class MetaWebhookService:
             print(f"Error processing webhook: {str(e)}")
             return {"status": "error", "status_code": 500}
 
+import logging
+logger = logging.getLogger(__name__)
+
     @staticmethod
     def handle_fb_ig_message(data):
-        print("Incoming FB/IG Webhook Payload:", json.dumps(data, indent=2))
+        logger.warning(f"Incoming FB/IG Webhook Payload: {json.dumps(data)}")
         try:
             for entry in data.get('entry') or []:
                 entry = entry or {}
@@ -155,7 +158,7 @@ class MetaWebhookService:
                     platform = 'INSTAGRAM'
                 
                 if not client:
-                    print(f"No client found for {platform} recipient ID: {recipient_id}")
+                    logger.warning(f"No client found for {platform} recipient ID: {recipient_id}")
                     continue
 
                 if not client.automation_enabled:
@@ -207,7 +210,7 @@ class MetaWebhookService:
 
             return {"status": "success", "status_code": 200}
         except Exception as e:
-            print(f"Error processing FB/IG webhook: {str(e)}")
+            logger.error(f"Error processing FB/IG webhook: {str(e)}")
             return {"status": "error", "status_code": 500}
 
     @staticmethod
