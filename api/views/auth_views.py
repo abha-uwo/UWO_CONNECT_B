@@ -252,4 +252,72 @@ class ForgotPasswordResetView(views.APIView):
         result = AuthService.forgot_password_reset(email, password)
         return Response({"message": result.get("message")}, status=result.get("status_code", 200))
 
+class WhatsAppEmbeddedSignupView(APIView):
+    permission_classes = [IsAuthenticated]
 
+    def post(self, request):
+        code = request.data.get('code')
+        if not code:
+            return Response({"error": "No code provided"}, status=400)
+
+        import os
+        import requests
+        
+        client_id = os.getenv('FACEBOOK_APP_ID')
+        client_secret = os.getenv('FACEBOOK_APP_SECRET')
+        
+        if not client_id or not client_secret:
+            return Response({"error": "Facebook App credentials not configured on server."}, status=500)
+
+        # 1. Exchange code for access token
+        token_url = "https://graph.facebook.com/v20.0/oauth/access_token"
+        token_payload = {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "code": code
+        }
+        
+        token_res = requests.get(token_url, params=token_payload)
+        token_data = token_res.json()
+        
+        if "error" in token_data:
+            return Response({"error": "Failed to exchange code", "details": token_data}, status=400)
+            
+        access_token = token_data.get('access_token')
+        
+        # 2. Get shared WABA info from the embedded signup callback
+        # In the embedded signup flow, Meta gives us shared WABA IDs 
+        waba_url = f"https://graph.facebook.com/v20.0/me/client_whatsapp_business_accounts?access_token={access_token}"
+        waba_res = requests.get(waba_url)
+        waba_data = waba_res.json()
+        
+        if "error" in waba_data or not waba_data.get('data'):
+            return Response({"error": "Could not find WhatsApp Business Accounts", "details": waba_data}, status=400)
+            
+        waba_id = waba_data['data'][0]['id']
+        
+        # 3. Get Phone Number ID
+        phone_url = f"https://graph.facebook.com/v20.0/{waba_id}/phone_numbers?access_token={access_token}"
+        phone_res = requests.get(phone_url)
+        phone_data = phone_res.json()
+        
+        if "error" in phone_data or not phone_data.get('data'):
+            return Response({"error": "Could not find Phone Numbers for WABA", "details": phone_data}, status=400)
+            
+        phone_number_id = phone_data['data'][0]['id']
+        display_phone_number = phone_data['data'][0].get('display_phone_number', '')
+        
+        # 4. Save to Client
+        client = request.user.client
+        client.whatsapp_config = {
+            "access_token": access_token,
+            "waba_id": waba_id,
+            "phone_number_id": phone_number_id,
+            "display_phone_number": display_phone_number
+        }
+        client.save()
+        
+        return Response({
+            "message": "WhatsApp Business connected successfully",
+            "whatsapp_config": client.whatsapp_config
+        })

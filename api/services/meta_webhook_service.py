@@ -9,6 +9,8 @@ from ..repositories.contact_repository import ContactRepository
 from ..repositories.message_repository import MessageRepository
 from ..repositories.automation_repository import AutomationRepository
 from ..repositories.knowledge_repository import KnowledgeRepository
+import logging
+logger = logging.getLogger(__name__)
 
 class MetaWebhookService:
     @staticmethod
@@ -125,9 +127,6 @@ class MetaWebhookService:
         except Exception as e:
             print(f"Error processing webhook: {str(e)}")
             return {"status": "error", "status_code": 500}
-
-import logging
-logger = logging.getLogger(__name__)
 
     @staticmethod
     def handle_fb_ig_message(data):
