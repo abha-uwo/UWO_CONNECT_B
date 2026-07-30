@@ -31,7 +31,7 @@ class WorkflowEngine:
             is_active=True
         ).first()
 
-        if session:
+        if session and incoming_text_lower not in ['hi', 'hello', 'start', 'restart', 'hospital', 'menu']:
             # Check if session's workflow matches the incoming channel
             wf_channels = session.workflow.channels or []
             is_match = False
@@ -41,8 +41,15 @@ class WorkflowEngine:
                 is_match = True
             
             if is_match:
-                # Advance the existing session
-                return WorkflowEngine._advance_session(session, incoming_text)
+                res = WorkflowEngine._advance_session(session, incoming_text)
+                if res:
+                    return res
+                # Deactivate stuck session if no output produced
+                session.is_active = False
+                session.save()
+        elif session:
+            session.is_active = False
+            session.save()
 
         # 2. Check for new workflow triggers
         workflows = WorkflowRepository.filter_workflows(client=client, enabled=True, trigger_type='KEYWORD')
