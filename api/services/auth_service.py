@@ -56,10 +56,6 @@ class AuthService:
 
         try:
             decoded_token = firebase_auth.verify_id_token(id_token)
-        except firebase_auth.ExpiredIdTokenError:
-            return {"error": "Firebase token has expired", "status_code": 401}
-        except firebase_auth.InvalidIdTokenError:
-            return {"error": "Invalid Firebase token", "status_code": 400}
         except Exception as e:
             import jwt
             try:
