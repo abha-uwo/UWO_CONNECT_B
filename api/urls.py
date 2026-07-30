@@ -50,7 +50,13 @@ urlpatterns = [
     path('platform-assistant/', PlatformAssistantView.as_view(), name='platform-assistant'),
     path('admin/settings/global', GlobalSettingsView.as_view(), name='global-settings'),
     path('webhook/whatsapp', WhatsAppWebhookView.as_view(), name='whatsapp-webhook'),
+    path('webhook/whatsapp/', WhatsAppWebhookView.as_view(), name='whatsapp-webhook-slash'),
+    path('webhooks/whatsapp', WhatsAppWebhookView.as_view(), name='whatsapp-webhooks'),
+    path('webhooks/whatsapp/', WhatsAppWebhookView.as_view(), name='whatsapp-webhooks-slash'),
     path('webhook/facebook-instagram', FacebookInstagramWebhookView.as_view(), name='facebook-instagram-webhook'),
+    path('webhook/facebook-instagram/', FacebookInstagramWebhookView.as_view(), name='facebook-instagram-webhook-slash'),
+    path('webhooks/facebook', FacebookInstagramWebhookView.as_view(), name='facebook-webhooks'),
+    path('webhooks/facebook/', FacebookInstagramWebhookView.as_view(), name='facebook-webhooks-slash'),
     # RAG Knowledge Base
     path('knowledge/', KnowledgeBaseView.as_view(), name='knowledge-base'),
     path('knowledge/<str:pk>/', KnowledgeBaseView.as_view(), name='knowledge-base-detail'),
