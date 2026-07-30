@@ -151,7 +151,11 @@ class MetaWebhookService:
                     all_clients = ClientRepository.get_all_clients()
                     for c in all_clients:
                         ic = c.instagram_config or {}
-                        if str(ic.get('instagram_business_id', '')) == str(recipient_id):
+                        fc = c.facebook_config or {}
+                        ig_id = str(ic.get('instagram_business_id', ''))
+                        ig_page_id = str(ic.get('page_id', ''))
+                        fb_page_id = str(fc.get('page_id', ''))
+                        if str(recipient_id) in [ig_id, ig_page_id, fb_page_id] and (ig_id or ig_page_id or fb_page_id):
                             client = c
                             break
                     platform = 'INSTAGRAM'
@@ -411,8 +415,8 @@ class MetaWebhookService:
 
     @staticmethod
     def send_fb_ig_message(client, platform, recipient_id, text_body, buttons=None, media_url=None, media_type=None):
-        config = client.facebook_config if platform == 'FACEBOOK' else client.instagram_config
-        access_token = config.get('access_token') or client.whatsapp_access_token
+        config = client.facebook_config if platform == 'FACEBOOK' else (client.instagram_config or {})
+        access_token = config.get('access_token') or (client.facebook_config or {}).get('access_token') or client.whatsapp_access_token
         
         if not access_token:
             print(f"No access token found for {platform} messaging")
