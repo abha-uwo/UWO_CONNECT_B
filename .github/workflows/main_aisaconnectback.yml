@@ -37,6 +37,7 @@ jobs:
           path: |
             .
             !antenv/
+            !venv/
 
   deploy:
     runs-on: ubuntu-latest
@@ -58,15 +59,15 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_BE829F9ED7AE4A11AF5224E4864585B9 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_558BAD392DD34F7DB9514ADD84B40E13 }}
 
-      - name: Zip application package
-        run: zip -r app.zip . -x "*.git*"
+      - name: Zip application package (lightweight)
+        run: zip -r app.zip . -x "*.git*" "venv/*" "antenv/*" "*.pyc" "__pycache__/*"
 
       - name: Deploy Zip to Azure Web App via Azure CLI
         uses: azure/cli@v2
         with:
           inlineScript: |
             rg=$(az webapp list --query "[?name=='aisaconnectback'].resourceGroup" -o tsv)
-            echo "Deploying zip to Azure Web App in resource group: $rg"
+            echo "Deploying lightweight zip to Azure Web App in resource group: $rg"
             az webapp deploy --name aisaconnectback --resource-group "$rg" --src-path app.zip --type zip
             echo "Setting startup command and restarting app service"
             az webapp config set --name aisaconnectback --resource-group "$rg" --startup-file "daphne -b 0.0.0.0 -p 8080 core.asgi:application"
