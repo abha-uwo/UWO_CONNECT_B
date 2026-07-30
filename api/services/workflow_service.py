@@ -52,7 +52,7 @@ class WorkflowEngine:
             session.save()
 
         # 2. Check for new workflow triggers
-        workflows = WorkflowRepository.filter_workflows(client=client, enabled=True, trigger_type='KEYWORD')
+        workflows = WorkflowRepository.filter_workflows(client=client, enabled=True)
         for wf in workflows:
             wf_channels = wf.channels or []
             if len(wf_channels) > 0 and channel_upper not in wf_channels:
@@ -60,13 +60,17 @@ class WorkflowEngine:
             if len(wf_channels) == 0 and channel_upper != 'WHATSAPP':
                 continue
 
+            # Catch-all trigger: any incoming message
+            if wf.trigger_type == 'ALL' or (isinstance(wf.trigger_value, list) and '*' in wf.trigger_value) or (isinstance(wf.trigger_value, str) and wf.trigger_value.strip() == '*'):
+                return WorkflowEngine._start_workflow(client, phone_number, wf)
+
             if isinstance(wf.trigger_value, list):
                 trigger_keywords = [t.lower().strip() for t in wf.trigger_value if isinstance(t, str)]
-                if any(kw and (kw == incoming_text_lower or kw in incoming_text_lower) for kw in trigger_keywords):
+                if '*' in trigger_keywords or any(kw and (kw == incoming_text_lower or kw in incoming_text_lower) for kw in trigger_keywords):
                     return WorkflowEngine._start_workflow(client, phone_number, wf)
             elif isinstance(wf.trigger_value, str):
                 kw = wf.trigger_value.lower().strip()
-                if kw and (kw == incoming_text_lower or kw in incoming_text_lower):
+                if kw == '*' or (kw and (kw == incoming_text_lower or kw in incoming_text_lower)):
                     return WorkflowEngine._start_workflow(client, phone_number, wf)
 
         return None
