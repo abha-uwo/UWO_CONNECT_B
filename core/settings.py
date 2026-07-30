@@ -245,5 +245,6 @@ CASHFREE_ENV = os.getenv('CASHFREE_ENV', 'TEST')
 # Razorpay Payment Gateway Settings
 RAZORPAY_KEY_ID = os.getenv('RAZORPAY_KEY_ID', '')
 RAZORPAY_KEY_SECRET = os.getenv('RAZORPAY_KEY_SECRET', '')
+RAZORPAY_WEBHOOK_SECRET = os.getenv('RAZORPAY_WEBHOOK_SECRET', '')
 
 
