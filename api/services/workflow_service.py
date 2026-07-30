@@ -54,13 +54,12 @@ class WorkflowEngine:
                 continue
 
             if isinstance(wf.trigger_value, list):
-                # Ensure lowercase comparison
                 trigger_keywords = [t.lower().strip() for t in wf.trigger_value if isinstance(t, str)]
-                if incoming_text_lower in trigger_keywords:
-                    # Found a matching workflow, start it!
+                if any(kw and (kw == incoming_text_lower or kw in incoming_text_lower) for kw in trigger_keywords):
                     return WorkflowEngine._start_workflow(client, phone_number, wf)
             elif isinstance(wf.trigger_value, str):
-                if incoming_text_lower == wf.trigger_value.lower().strip():
+                kw = wf.trigger_value.lower().strip()
+                if kw and (kw == incoming_text_lower or kw in incoming_text_lower):
                     return WorkflowEngine._start_workflow(client, phone_number, wf)
 
         return None
@@ -97,7 +96,7 @@ class WorkflowEngine:
         edges = steps.get('edges', [])
         
         # Get contact for checking conditions
-        from .models import Contact
+        from ..models import Contact
         contact = ContactRepository.filter_contacts(client=session.client, platform_id=session.phone_number).first()
 
         messages_to_send = []
