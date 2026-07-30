@@ -14,7 +14,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read #This is required for actions/checkout
+      contents: read
 
     steps:
       - uses: actions/checkout@v4
@@ -44,8 +44,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
+      id-token: write
+      contents: read
 
     steps:
       - name: Download artifact from build job
@@ -55,6 +55,7 @@ jobs:
       
       - name: Login to Azure
         uses: azure/login@v2
+        continue-on-error: true
         with:
           client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_C4A55F4EE4F8406E8B179251632C4796 }}
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_FCB2385D806942E29C19A98AC66DDCF2 }}
@@ -66,3 +67,4 @@ jobs:
         with:
           app-name: 'aisaconnectback'
           slot-name: 'Production'
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_C4A55F4EE4F8406E8B179251632C4796 || secrets.AZUREAPPSERVICE_PUBLISHPROFILE_97120F1E9B5E453B95F2285E8EF64BA5 || secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
