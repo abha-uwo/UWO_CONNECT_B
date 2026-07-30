@@ -472,6 +472,10 @@ class MetaWebhookService:
         try:
             res = requests.post(url, json=payload, headers=headers)
             print(f"{platform} Send Response:", res.status_code, res.text)
+            if res.status_code != 200:
+                fallback_url = "https://graph.facebook.com/v20.0/me/messages"
+                res_fb = requests.post(fallback_url, json=payload, headers=headers)
+                print(f"{platform} Fallback Send Response:", res_fb.status_code, res_fb.text)
             
             MessageRepository.create_message(
                 client=client,
