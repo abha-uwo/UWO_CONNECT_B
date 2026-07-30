@@ -40,11 +40,10 @@ elif firebase_sa_path:
         cred = credentials.Certificate(firebase_sa_path)
         firebase_admin.initialize_app(cred)
     else:
-        print(f"[WARNING] Firebase service account file not found: {firebase_sa_path}")
-        print("[WARNING] Firebase authentication will not work until the file is provided.")
+        print(f"[WARNING] Firebase service account file not found: {firebase_sa_path}. Initializing default Firebase app.")
+        firebase_admin.initialize_app()
 else:
-    print("[WARNING] FIREBASE_SERVICE_ACCOUNT_PATH not set in .env")
-    print("[WARNING] Firebase authentication will not work until configured.")
+    firebase_admin.initialize_app()
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv('SECRET_KEY')

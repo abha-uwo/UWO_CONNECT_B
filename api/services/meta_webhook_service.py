@@ -240,7 +240,8 @@ class MetaWebhookService:
 
             if auto.keywords:
                 for keyword in auto.keywords:
-                    if keyword.lower().strip() == incoming_text_lower:
+                    kw = keyword.lower().strip()
+                    if kw and (kw == incoming_text_lower or kw in incoming_text_lower):
                         MetaWebhookService.send_whatsapp_message(client, to_number, auto.response, phone_number_id, auto.buttons)
                         match_found = True
                         break
@@ -304,7 +305,8 @@ class MetaWebhookService:
 
             if auto.keywords:
                 for keyword in auto.keywords:
-                    if keyword.lower().strip() == incoming_text_lower:
+                    kw = keyword.lower().strip()
+                    if kw and (kw == incoming_text_lower or kw in incoming_text_lower):
                         MetaWebhookService.send_fb_ig_message(client, platform, sender_id, auto.response, auto.buttons)
                         match_found = True
                         break
