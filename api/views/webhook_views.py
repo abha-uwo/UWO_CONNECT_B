@@ -34,7 +34,6 @@ def get_tenant_client(request):
 @method_decorator(csrf_exempt, name='dispatch')
 class WhatsAppWebhookView(APIView):
     permission_classes = []
-    authentication_classes = []
     def get(self, request):
         mode = request.query_params.get("hub.mode")
         token = request.query_params.get("hub.verify_token")
@@ -57,7 +56,6 @@ class WhatsAppWebhookView(APIView):
 @method_decorator(csrf_exempt, name='dispatch')
 class FacebookInstagramWebhookView(APIView):
     permission_classes = []
-    authentication_classes = []
     def get(self, request):
         mode = request.query_params.get("hub.mode")
         token = request.query_params.get("hub.verify_token")
