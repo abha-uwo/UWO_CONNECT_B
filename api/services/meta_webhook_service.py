@@ -422,7 +422,9 @@ class MetaWebhookService:
             print(f"No access token found for {platform} messaging")
             return
             
-        if platform == 'INSTAGRAM':
+        if access_token.startswith('IG'):
+            url = "https://graph.instagram.com/v20.0/me/messages"
+        elif platform == 'INSTAGRAM':
             ig_id = (client.instagram_config or {}).get('instagram_business_id') or (client.facebook_config or {}).get('instagram_business_id') or '17841443390895451'
             url = f"https://graph.facebook.com/v20.0/{ig_id}/messages"
         else:
@@ -473,7 +475,7 @@ class MetaWebhookService:
             res = requests.post(url, json=payload, headers=headers)
             print(f"{platform} Send Response:", res.status_code, res.text)
             if res.status_code != 200:
-                fallback_url = "https://graph.facebook.com/v20.0/me/messages"
+                fallback_url = "https://graph.instagram.com/v20.0/me/messages" if access_token.startswith('IG') else "https://graph.facebook.com/v20.0/me/messages"
                 res_fb = requests.post(fallback_url, json=payload, headers=headers)
                 print(f"{platform} Fallback Send Response:", res_fb.status_code, res_fb.text)
             
