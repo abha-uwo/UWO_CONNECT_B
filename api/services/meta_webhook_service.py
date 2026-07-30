@@ -422,7 +422,12 @@ class MetaWebhookService:
             print(f"No access token found for {platform} messaging")
             return
             
-        url = "https://graph.facebook.com/v20.0/me/messages"
+        if platform == 'INSTAGRAM':
+            ig_id = (client.instagram_config or {}).get('instagram_business_id') or 'me'
+            url = f"https://graph.facebook.com/v20.0/{ig_id}/messages"
+        else:
+            url = "https://graph.facebook.com/v20.0/me/messages"
+
         headers = {
             "Authorization": f"Bearer {access_token}",
             "Content-Type": "application/json"
