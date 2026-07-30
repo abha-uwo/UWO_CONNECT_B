@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, Client, Automation, Workflow, GlobalSetting, Contact, Template, Campaign, SupportMessage, AuditLog, TeamInvite, KnowledgeDocument, TeamMessage, Product, Order
+from .models import User, Client, Automation, Workflow, GlobalSetting, Contact, Template, Campaign, SupportMessage, AuditLog, TeamInvite, KnowledgeDocument, TeamMessage, Product, Order, Task, TaskComment, WorkReport, WorkApproval, TeamChannel, TeamChatMessage
 from .repositories.contact_repository import ContactRepository
 from .repositories.workflow_repository import WorkflowRepository
 from .repositories.automation_repository import AutomationRepository
@@ -50,10 +50,11 @@ class UserSerializer(serializers.ModelSerializer):
     id = ObjectIdField(read_only=True)
     client = ObjectIdField(read_only=True)
     name = serializers.CharField(source='first_name', required=False)
+    reporting_manager_name = serializers.ReadOnlyField(source='reporting_manager.username')
 
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'name', 'first_name', 'role', 'status', 'client', 'permissions')
+        fields = ('id', 'username', 'email', 'name', 'first_name', 'role', 'enterprise_role', 'department', 'designation', 'reporting_manager', 'reporting_manager_name', 'status', 'client', 'permissions', 'is_online', 'last_active_at')
         extra_kwargs = {'password': {'write_only': True}}
 
 class TeamInviteSerializer(serializers.ModelSerializer):
@@ -240,4 +241,76 @@ class OrderSerializer(serializers.ModelSerializer):
         model = Order
         fields = '__all__'
         read_only_fields = ('client',)
+
+
+class TaskCommentSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    author_name = serializers.ReadOnlyField(source='author.username')
+    author_role = serializers.ReadOnlyField(source='author.enterprise_role')
+
+    class Meta:
+        model = TaskComment
+        fields = '__all__'
+        read_only_fields = ('author', 'created_at')
+
+
+class TaskSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    client = ObjectIdField(read_only=True)
+    created_by_name = serializers.ReadOnlyField(source='created_by.username')
+    comments = TaskCommentSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Task
+        fields = '__all__'
+        read_only_fields = ('client', 'created_by', 'created_at', 'updated_at')
+
+
+class WorkReportSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    client = ObjectIdField(read_only=True)
+    employee_name = serializers.ReadOnlyField(source='employee.username')
+    employee_department = serializers.ReadOnlyField(source='employee.department')
+
+    class Meta:
+        model = WorkReport
+        fields = '__all__'
+        read_only_fields = ('client', 'employee', 'created_at')
+
+
+class WorkApprovalSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    task_title = serializers.ReadOnlyField(source='task.title')
+    employee_name = serializers.ReadOnlyField(source='employee.username')
+    reviewer_name = serializers.ReadOnlyField(source='reviewer.username')
+
+    class Meta:
+        model = WorkApproval
+        fields = '__all__'
+        read_only_fields = ('employee', 'submitted_at', 'reviewed_at')
+
+
+class TeamChannelSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    client = ObjectIdField(read_only=True)
+    member_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TeamChannel
+        fields = '__all__'
+        read_only_fields = ('client', 'created_by', 'created_at')
+
+    def get_member_count(self, obj):
+        return obj.members.count()
+
+
+class TeamChatMessageSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    sender_name = serializers.ReadOnlyField(source='sender.username')
+    sender_role = serializers.ReadOnlyField(source='sender.enterprise_role')
+
+    class Meta:
+        model = TeamChatMessage
+        fields = '__all__'
+        read_only_fields = ('sender', 'created_at')
 

@@ -62,6 +62,16 @@ class User(AbstractUser):
         ('CLIENT', 'Client'),
         ('AGENT', 'Agent'),
     ]
+    ENTERPRISE_ROLE_CHOICES = [
+        ('SUPER_ADMIN', 'Super Admin'),
+        ('ORG_ADMIN', 'Organization Admin'),
+        ('HR', 'HR Manager'),
+        ('MANAGER', 'Manager'),
+        ('TEAM_LEAD', 'Team Lead'),
+        ('EMPLOYEE', 'Employee'),
+        ('INTERN', 'Intern'),
+        ('GUEST', 'Guest'),
+    ]
     STATUS_CHOICES = [
         ('PENDING', 'Pending'),
         ('APPROVED', 'Approved'),
@@ -69,12 +79,18 @@ class User(AbstractUser):
         ('SUSPENDED', 'Suspended'),
     ]
     role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='CLIENT')
+    enterprise_role = models.CharField(max_length=30, choices=ENTERPRISE_ROLE_CHOICES, default='EMPLOYEE')
+    department = models.CharField(max_length=100, default='General', blank=True)
+    designation = models.CharField(max_length=100, default='Team Member', blank=True)
+    reporting_manager = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='direct_reports')
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PENDING')
     client = models.ForeignKey(Client, on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
     permissions = models.JSONField(default=list, blank=True)
+    is_online = models.BooleanField(default=False)
+    last_active_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
-        return f"{self.username} ({self.role})"
+        return f"{self.username} ({self.enterprise_role or self.role})"
 
 class TeamInvite(models.Model):
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='team_invites')
@@ -420,6 +436,138 @@ class PaymentOrder(models.Model):
 
     def __str__(self):
         return f"PaymentOrder {self.order_id} - {self.client.business_name} ({self.status})"
+
+
+class Task(models.Model):
+    PRIORITY_CHOICES = [
+        ('LOW', 'Low'),
+        ('MEDIUM', 'Medium'),
+        ('HIGH', 'High'),
+        ('URGENT', 'Urgent'),
+    ]
+    STATUS_CHOICES = [
+        ('NOT_STARTED', 'Not Started'),
+        ('IN_PROGRESS', 'In Progress'),
+        ('UNDER_REVIEW', 'Under Review'),
+        ('WAITING_APPROVAL', 'Waiting Approval'),
+        ('BLOCKED', 'Blocked'),
+        ('COMPLETED', 'Completed'),
+        ('REJECTED', 'Rejected'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='tasks')
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='MEDIUM')
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='NOT_STARTED')
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_tasks')
+    assigned_to = models.ManyToManyField(User, related_name='assigned_tasks', blank=True)
+    department = models.CharField(max_length=100, default='General', blank=True)
+    start_date = models.DateField(null=True, blank=True)
+    due_date = models.DateField(null=True, blank=True)
+    estimated_hours = models.FloatField(default=0.0)
+    spent_hours = models.FloatField(default=0.0)
+    progress_percentage = models.IntegerField(default=0)
+    milestone_name = models.CharField(max_length=100, blank=True, null=True)
+    is_recurring = models.BooleanField(default=False)
+    is_archived = models.BooleanField(default=False)
+    checklist = models.JSONField(default=list, blank=True)
+    attachments = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Task #{self.id} - {self.title} [{self.status}]"
+
+
+class TaskComment(models.Model):
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='comments')
+    author = models.ForeignKey(User, on_delete=models.CASCADE, related_name='task_comments')
+    text = models.TextField()
+    attachments = models.JSONField(default=list, blank=True)
+    mentions = models.JSONField(default=list, blank=True)
+    parent_comment = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='replies')
+    is_pinned = models.BooleanField(default=False)
+    is_resolved = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Comment by {self.author.username} on Task #{self.task.id}"
+
+
+class WorkReport(models.Model):
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='work_reports')
+    employee = models.ForeignKey(User, on_delete=models.CASCADE, related_name='work_reports')
+    report_date = models.DateField()
+    todays_work = models.TextField()
+    completed_work = models.TextField(blank=True, null=True)
+    remaining_work = models.TextField(blank=True, null=True)
+    blockers = models.TextField(blank=True, null=True)
+    need_help = models.BooleanField(default=False)
+    next_steps = models.TextField(blank=True, null=True)
+    hours_worked = models.FloatField(default=8.0)
+    attachments = models.JSONField(default=list, blank=True)
+    ai_summary = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Report {self.report_date} - {self.employee.username}"
+
+
+class WorkApproval(models.Model):
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending Review'),
+        ('APPROVED', 'Approved'),
+        ('CHANGES_REQUESTED', 'Changes Requested'),
+        ('REJECTED', 'Rejected'),
+    ]
+
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='approvals')
+    employee = models.ForeignKey(User, on_delete=models.CASCADE, related_name='submitted_approvals')
+    reviewer = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='reviewed_approvals')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    submission_notes = models.TextField(blank=True, null=True)
+    feedback_notes = models.TextField(blank=True, null=True)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Approval #{self.id} for Task #{self.task.id} - {self.status}"
+
+
+class TeamChannel(models.Model):
+    TYPE_CHOICES = [
+        ('PUBLIC', 'Public Channel'),
+        ('PRIVATE', 'Private Channel'),
+        ('DIRECT', 'Direct Message'),
+    ]
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='team_channels')
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True, null=True)
+    channel_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='PUBLIC')
+    members = models.ManyToManyField(User, related_name='team_channels', blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_channels')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"#{self.name} ({self.channel_type})"
+
+
+class TeamChatMessage(models.Model):
+    channel = models.ForeignKey(TeamChannel, on_delete=models.CASCADE, related_name='messages')
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name='team_chat_messages')
+    text = models.TextField()
+    attachments = models.JSONField(default=list, blank=True)
+    reactions = models.JSONField(default=dict, blank=True)
+    mentions = models.JSONField(default=list, blank=True)
+    is_pinned = models.BooleanField(default=False)
+    is_announcement = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Msg in #{self.channel.name} by {self.sender.username}"
 
 
 
