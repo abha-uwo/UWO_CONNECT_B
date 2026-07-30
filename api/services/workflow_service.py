@@ -31,33 +31,26 @@ class WorkflowEngine:
             is_active=True
         ).first()
 
-        if session and incoming_text_lower not in ['hi', 'hello', 'start', 'restart', 'hospital', 'menu']:
-            # Check if session's workflow matches the incoming channel
+        if session:
             wf_channels = session.workflow.channels or []
             is_match = False
             if len(wf_channels) > 0 and channel_upper in wf_channels:
                 is_match = True
-            elif len(wf_channels) == 0 and channel_upper == 'WHATSAPP':
+            elif len(wf_channels) == 0:
                 is_match = True
             
             if is_match:
                 res = WorkflowEngine._advance_session(session, incoming_text)
                 if res:
                     return res
-                # Deactivate stuck session if no output produced
                 session.is_active = False
                 session.save()
-        elif session:
-            session.is_active = False
-            session.save()
 
         # 2. Check for new workflow triggers
         workflows = WorkflowRepository.filter_workflows(client=client, enabled=True)
         for wf in workflows:
             wf_channels = wf.channels or []
             if len(wf_channels) > 0 and channel_upper not in wf_channels:
-                continue
-            if len(wf_channels) == 0 and channel_upper != 'WHATSAPP':
                 continue
 
             # Catch-all trigger: any incoming message
@@ -123,8 +116,24 @@ class WorkflowEngine:
         if current_node.get('type') == 'buttons':
             buttons = current_node.get('data', {}).get('buttons', [])
             matched_index = -1
+            import re
+            input_clean = incoming_text.strip().lower()
+            input_words = re.sub(r'[^\w\s]', '', input_clean).strip()
+
             for i, btn_text in enumerate(buttons):
-                if incoming_text.strip().lower() == btn_text.lower():
+                btn_clean = btn_text.strip().lower()
+                btn_words = re.sub(r'[^\w\s]', '', btn_clean).strip()
+
+                # 1. Exact match
+                if input_clean == btn_clean:
+                    matched_index = i
+                    break
+                # 2. Number index match (e.g., user types "1" for 1st button)
+                if input_clean in [str(i + 1), f"#{i + 1}", f"option {i + 1}"]:
+                    matched_index = i
+                    break
+                # 3. Clean word / substring match (ignoring emojis)
+                if btn_words and input_words and (btn_words == input_words or input_words in btn_words or btn_words in input_words):
                     matched_index = i
                     break
             
@@ -134,12 +143,11 @@ class WorkflowEngine:
                 if next_edge:
                     current_node_id = next_edge.get('target')
                 else:
-                    # No connection from this button, end the session
                     session.is_active = False
                     session.save()
                     return None
             else:
-                # User did not select a valid button. Reprompt them.
+                # Reprompt options
                 return [WorkflowEngine._format_node_response(current_node)]
 
         # 2. Sequential node traversal loop
