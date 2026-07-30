@@ -423,7 +423,7 @@ class MetaWebhookService:
             return
             
         if platform == 'INSTAGRAM':
-            ig_id = (client.instagram_config or {}).get('instagram_business_id') or 'me'
+            ig_id = (client.instagram_config or {}).get('instagram_business_id') or (client.facebook_config or {}).get('instagram_business_id') or '17841443390895451'
             url = f"https://graph.facebook.com/v20.0/{ig_id}/messages"
         else:
             url = "https://graph.facebook.com/v20.0/me/messages"
