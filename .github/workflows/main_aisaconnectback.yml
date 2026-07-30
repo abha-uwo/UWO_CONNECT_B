@@ -58,10 +58,24 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_BE829F9ED7AE4A11AF5224E4864585B9 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_558BAD392DD34F7DB9514ADD84B40E13 }}
 
+      - name: Release Kudu deployment locks
+        uses: azure/cli@v2
+        with:
+          inlineScript: |
+            rg=$(az webapp list --query "[?name=='aisaconnectback'].resourceGroup" -o tsv)
+            if [ -n "$rg" ]; then
+              echo "Restarting webapp to clear deployment locks in resource group: $rg"
+              az webapp restart --name aisaconnectback --resource-group "$rg"
+            fi
+
+      - name: Zip application package
+        run: zip -r app.zip . -x "*.git*"
+
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
         id: deploy-to-webapp
         with:
           app-name: 'aisaconnectback'
           slot-name: 'Production'
+          package: 'app.zip'
           startup-command: 'daphne -b 0.0.0.0 -p 8080 core.asgi:application'
