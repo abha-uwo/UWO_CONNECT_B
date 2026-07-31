@@ -480,3 +480,98 @@ class InstagramEmbeddedSignupView(APIView):
             "instagram_config": client.instagram_config,
         })
 
+
+class InstagramOAuthCallbackView(APIView):
+    """
+    Handles the Instagram Business Login OAuth callback.
+    
+    Flow:
+    1. Frontend redirects user to Instagram OAuth authorize URL
+    2. Instagram redirects back to /client/channels?code=...&state=instagram
+    3. Frontend POSTs the code here with the redirect_uri
+    4. We exchange code → short-lived token → long-lived token
+    5. Fetch IG Business Account details and save to Client
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        import datetime
+        code         = request.data.get('code')
+        redirect_uri = request.data.get('redirect_uri')
+
+        if not code:
+            return Response({"error": "No code provided"}, status=400)
+        if not redirect_uri:
+            return Response({"error": "No redirect_uri provided"}, status=400)
+
+        app_id     = os.getenv('INSTAGRAM_APP_ID') or os.getenv('FACEBOOK_APP_ID')
+        app_secret = os.getenv('INSTAGRAM_APP_SECRET') or os.getenv('FACEBOOK_APP_SECRET')
+
+        if not app_id or not app_secret:
+            return Response({"error": "Instagram App credentials not configured on server."}, status=500)
+
+        # 1. Exchange the auth code for a short-lived access token
+        token_res = requests.post(
+            "https://api.instagram.com/oauth/access_token",
+            data={
+                "client_id":     app_id,
+                "client_secret": app_secret,
+                "grant_type":    "authorization_code",
+                "redirect_uri":  redirect_uri,
+                "code":          code,
+            }
+        )
+        token_data = token_res.json()
+
+        if "error_type" in token_data or "error" in token_data:
+            return Response({"error": "Failed to exchange Instagram code", "details": token_data}, status=400)
+
+        short_lived_token = token_data.get("access_token")
+        instagram_user_id = token_data.get("user_id")
+
+        if not short_lived_token:
+            return Response({"error": "No access_token in Instagram response", "details": token_data}, status=400)
+
+        # 2. Exchange short-lived token for long-lived token (60-day)
+        ll_res = requests.get(
+            "https://graph.instagram.com/access_token",
+            params={
+                "grant_type":    "ig_exchange_token",
+                "client_secret": app_secret,
+                "access_token":  short_lived_token,
+            }
+        )
+        ll_data = ll_res.json()
+        long_lived_token = ll_data.get("access_token", short_lived_token)
+
+        # 3. Fetch Instagram Business Account details
+        ig_res = requests.get(
+            f"https://graph.instagram.com/v20.0/{instagram_user_id}",
+            params={
+                "fields":       "id,name,username,profile_picture_url,biography,website,followers_count",
+                "access_token": long_lived_token,
+            }
+        )
+        ig_data = ig_res.json()
+        ig_username = ig_data.get("username", "")
+        ig_name     = ig_data.get("name", ig_username)
+
+        # 4. Save to Client
+        client = request.user.client
+        client.instagram_config = {
+            "instagram_business_id": str(instagram_user_id),
+            "page_name":             ig_username or ig_name,
+            "username":              ig_username,
+            "access_token":          long_lived_token,
+            "last_connected":        datetime.datetime.utcnow().isoformat(),
+            "last_updated":          datetime.datetime.utcnow().isoformat(),
+        }
+        client.instagram_enabled = True
+        client.save()
+
+        return Response({
+            "message": "Instagram Business Account connected successfully",
+            "instagram_config": client.instagram_config,
+        })
+
+
