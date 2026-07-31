@@ -211,7 +211,7 @@ class ClientMessagesView(APIView):
         if not client:
             return Response([])
         
-        messages = MessageRepository.filter_messages(client=client).order_by('-created_at')[:100]
+        messages = MessageRepository.filter_messages(client=client).order_by('-created_at')[:1000]
         data = []
         for msg in messages:
             data.append({
@@ -291,6 +291,21 @@ class ClientMessagesView(APIView):
         elif channel in ['INSTAGRAM', 'FACEBOOK']:
             webhook_view = FacebookInstagramWebhookView()
             webhook_view.send_message(client, channel, to_number, body)
+        elif channel == 'GMAIL':
+            from ..services.gmail_service import send_gmail_message
+            try:
+                send_gmail_message(client, to_address=to_number, body=body)
+                MessageRepository.create_message(
+                    client=client,
+                    channel='GMAIL',
+                    from_address=client.gmail_config.get('email_address', ''),
+                    to_address=to_number,
+                    body=body,
+                    message_type='OUTGOING',
+                    status='SENT'
+                )
+            except Exception as e:
+                return Response({"error": str(e)}, status=400)
         else:
             return Response({"error": f"Unsupported channel: {channel}"}, status=400)
             

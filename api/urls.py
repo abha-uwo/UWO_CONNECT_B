@@ -9,7 +9,7 @@ from .views import (
     SupportMessageViewSet, AdminImpersonateView, AuditLogViewSet,
     SuggestDraftView, TeamMemberViewSet, TeamInviteView, TeamChatView, ProductViewSet, OrderViewSet,
     CreatePaymentOrderView, VerifyPaymentView, PaymentHistoryView, CashfreeWebhookView, RazorpayWebhookView,
-    WhatsAppEmbeddedSignupView
+    WhatsAppEmbeddedSignupView, GmailConnectView, GmailCallbackView, GmailSyncView
 )
 
 router = DefaultRouter()
@@ -33,6 +33,9 @@ urlpatterns = [
     path('auth/login', LoginView.as_view(), name='login'),
     path('auth/google-login', GoogleLoginView.as_view(), name='google-login'),
     path('auth/google-client-id', GoogleClientIdView.as_view(), name='google-client-id'),
+    path('auth/gmail/connect', GmailConnectView.as_view(), name='gmail-connect'),
+    path('auth/gmail/callback', GmailCallbackView.as_view(), name='gmail-callback'),
+    path('auth/gmail/sync', GmailSyncView.as_view(), name='gmail-sync'),
     path('auth/firebase-login', FirebaseLoginView.as_view(), name='firebase-login'),
     path('auth/forgot-password/send-otp', ForgotPasswordSendOTPView.as_view(), name='forgot-password-send-otp'),
     path('auth/forgot-password/verify-otp', ForgotPasswordVerifyOTPView.as_view(), name='forgot-password-verify-otp'),

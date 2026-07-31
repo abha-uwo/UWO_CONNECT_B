@@ -22,6 +22,7 @@ class Client(models.Model):
     # Enablement Flags
     facebook_enabled = models.BooleanField(default=False)
     instagram_enabled = models.BooleanField(default=False)
+    gmail_enabled = models.BooleanField(default=False)
     
     # WhatsApp Config
     whatsapp_access_token = models.TextField(null=True, blank=True)
@@ -42,6 +43,7 @@ class Client(models.Model):
     facebook_config = models.JSONField(default=dict, blank=True)
     instagram_config = models.JSONField(default=dict, blank=True)
     whatsapp_config = models.JSONField(default=dict, blank=True)
+    gmail_config = models.JSONField(default=dict, blank=True)
     settings = models.JSONField(default=dict, blank=True)
     
     # Enterprise Features
@@ -147,6 +149,7 @@ class Message(models.Model):
         ('WHATSAPP', 'WhatsApp'),
         ('FACEBOOK', 'Facebook'),
         ('INSTAGRAM', 'Instagram'),
+        ('GMAIL', 'Gmail'),
     ]
     TYPE_CHOICES = [
         ('INCOMING', 'Incoming'),
