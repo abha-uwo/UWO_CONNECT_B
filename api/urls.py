@@ -9,8 +9,8 @@ from .views import (
     SupportMessageViewSet, AdminImpersonateView, AuditLogViewSet,
     SuggestDraftView, TeamMemberViewSet, TeamInviteView, TeamChatView, ProductViewSet, OrderViewSet,
     CreatePaymentOrderView, VerifyPaymentView, PaymentHistoryView, CashfreeWebhookView, RazorpayWebhookView,
-    WhatsAppEmbeddedSignupView, TaskViewSet, WorkReportView, WorkApprovalView, TeamChannelView,
-    TeamChatMessageView, TeamAnalyticsView, TeamAICopilotView
+    WhatsAppEmbeddedSignupView, ProjectViewSet, TaskViewSet, WorkReportView, WorkApprovalView, TeamChannelView,
+    TeamChatMessageView, TeamAnalyticsView, TeamAICopilotView, AttendanceViewSet, LeaveRequestViewSet
 )
 
 router = DefaultRouter()
@@ -23,7 +23,10 @@ router.register(r'campaigns', CampaignViewSet, basename='campaign')
 router.register(r'support/messages', SupportMessageViewSet, basename='support-message')
 router.register(r'audit-logs', AuditLogViewSet, basename='audit-log')
 router.register(r'team/members', TeamMemberViewSet, basename='team-member')
+router.register(r'team/projects', ProjectViewSet, basename='team-project')
 router.register(r'team/tasks', TaskViewSet, basename='team-task')
+router.register(r'team/attendance', AttendanceViewSet, basename='team-attendance')
+router.register(r'team/leaves', LeaveRequestViewSet, basename='team-leave')
 router.register(r'products', ProductViewSet, basename='product')
 router.register(r'orders', OrderViewSet, basename='order')
 

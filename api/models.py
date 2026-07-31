@@ -86,6 +86,13 @@ class User(AbstractUser):
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PENDING')
     client = models.ForeignKey(Client, on_delete=models.SET_NULL, null=True, blank=True, related_name='users')
     permissions = models.JSONField(default=list, blank=True)
+    assigned_platforms = models.JSONField(default=list, blank=True) # e.g. ["CRM", "WHATSAPP", "ORDERS", "PROJECTS"]
+    employee_id = models.CharField(max_length=50, null=True, blank=True)
+    joining_date = models.DateField(null=True, blank=True)
+    working_hours = models.CharField(max_length=50, default='9:00 AM - 6:00 PM', blank=True)
+    salary_visibility = models.BooleanField(default=False)
+    skills = models.JSONField(default=list, blank=True)
+    availability_status = models.CharField(max_length=30, default='AVAILABLE', blank=True) # AVAILABLE, BUSY, IN_MEETING, ON_LEAVE
     is_online = models.BooleanField(default=False)
     last_active_at = models.DateTimeField(null=True, blank=True)
 
@@ -438,6 +445,42 @@ class PaymentOrder(models.Model):
         return f"PaymentOrder {self.order_id} - {self.client.business_name} ({self.status})"
 
 
+class Project(models.Model):
+    PRIORITY_CHOICES = [
+        ('LOW', 'Low'),
+        ('MEDIUM', 'Medium'),
+        ('HIGH', 'High'),
+        ('URGENT', 'Urgent'),
+    ]
+    STATUS_CHOICES = [
+        ('PLANNING', 'Planning'),
+        ('IN_PROGRESS', 'In Progress'),
+        ('ON_HOLD', 'On Hold'),
+        ('COMPLETED', 'Completed'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='projects')
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='MEDIUM')
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default='PLANNING')
+    progress_percentage = models.IntegerField(default=0)
+    owner = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='owned_projects')
+    members = models.ManyToManyField(User, related_name='assigned_projects', blank=True)
+    department = models.CharField(max_length=100, default='General', blank=True)
+    start_date = models.DateField(null=True, blank=True)
+    deadline = models.DateField(null=True, blank=True)
+    milestones = models.JSONField(default=list, blank=True)
+    tags = models.JSONField(default=list, blank=True)
+    files = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Project: {self.name} [{self.status}]"
+
+
 class Task(models.Model):
     PRIORITY_CHOICES = [
         ('LOW', 'Low'),
@@ -457,6 +500,7 @@ class Task(models.Model):
     ]
 
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='tasks')
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, null=True, blank=True, related_name='tasks')
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='MEDIUM')
@@ -568,6 +612,63 @@ class TeamChatMessage(models.Model):
 
     def __str__(self):
         return f"Msg in #{self.channel.name} by {self.sender.username}"
+
+
+class Attendance(models.Model):
+    STATUS_CHOICES = [
+        ('PRESENT', 'Present'),
+        ('ABSENT', 'Absent'),
+        ('HALF_DAY', 'Half Day'),
+        ('ON_LEAVE', 'On Leave'),
+        ('LATE', 'Late'),
+    ]
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='attendances')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='attendances')
+    date = models.DateField()
+    clock_in = models.DateTimeField(null=True, blank=True)
+    clock_out = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PRESENT')
+    working_hours = models.FloatField(default=0.0)
+    break_hours = models.FloatField(default=0.0)
+    notes = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('client', 'user', 'date')
+
+    def __str__(self):
+        return f"Attendance {self.date} - {self.user.username} [{self.status}]"
+
+
+class LeaveRequest(models.Model):
+    TYPE_CHOICES = [
+        ('CASUAL', 'Casual Leave'),
+        ('SICK', 'Sick Leave'),
+        ('PAID', 'Paid Leave'),
+        ('UNPAID', 'Unpaid Leave'),
+        ('WFH', 'Work From Home'),
+    ]
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('APPROVED', 'Approved'),
+        ('REJECTED', 'Rejected'),
+    ]
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='leave_requests')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='leave_requests')
+    leave_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='CASUAL')
+    start_date = models.DateField()
+    end_date = models.DateField()
+    reason = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='reviewed_leaves')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Leave ({self.leave_type}) {self.start_date} to {self.end_date} - {self.user.username}"
+
 
 
 
