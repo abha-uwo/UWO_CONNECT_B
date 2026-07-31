@@ -1,3 +1,7 @@
+# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
+# More GitHub Actions for Azure: https://github.com/Azure/actions
+# More info on Python, GitHub Actions, and Azure App Service: https://aka.ms/python-webapps-actions
+
 name: Build and deploy Python app to Azure Web App - aisaconnectback
 
 on:
@@ -5,10 +9,6 @@ on:
     branches:
       - main
   workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   build:
@@ -37,6 +37,8 @@ jobs:
           path: |
             .
             !antenv/
+            !venv/
+            !.git/
 
   deploy:
     runs-on: ubuntu-latest
@@ -51,31 +53,10 @@ jobs:
         with:
           name: python-app
       
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_97120F1E9B5E453B95F2285E8EF64BA5 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_BE829F9ED7AE4A11AF5224E4864585B9 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_558BAD392DD34F7DB9514ADD84B40E13 }}
-
-      - name: Release Kudu deployment locks
-        uses: azure/cli@v2
-        with:
-          inlineScript: |
-            rg=$(az webapp list --query "[?name=='aisaconnectback'].resourceGroup" -o tsv)
-            if [ -n "$rg" ]; then
-              echo "Restarting webapp to clear deployment locks in resource group: $rg"
-              az webapp restart --name aisaconnectback --resource-group "$rg"
-            fi
-
-      - name: Zip application package
-        run: zip -r app.zip . -x "*.git*"
-
       - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
         id: deploy-to-webapp
         with:
           app-name: 'aisaconnectback'
           slot-name: 'Production'
-          package: 'app.zip'
-          startup-command: 'daphne -b 0.0.0.0 -p 8080 core.asgi:application'
+          publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}

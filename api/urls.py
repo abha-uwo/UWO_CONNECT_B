@@ -9,7 +9,9 @@ from .views import (
     SupportMessageViewSet, AdminImpersonateView, AuditLogViewSet,
     SuggestDraftView, TeamMemberViewSet, TeamInviteView, TeamChatView, ProductViewSet, OrderViewSet,
     CreatePaymentOrderView, VerifyPaymentView, PaymentHistoryView, CashfreeWebhookView, RazorpayWebhookView,
-    WhatsAppEmbeddedSignupView, GmailConnectView, GmailCallbackView, GmailSyncView
+    WhatsAppEmbeddedSignupView, GmailConnectView, GmailCallbackView, GmailSyncView,
+    TaskViewSet, WorkReportView, WorkApprovalView, TeamChannelView,
+    TeamChatMessageView, TeamAnalyticsView, TeamAICopilotView
 )
 
 router = DefaultRouter()
@@ -22,6 +24,7 @@ router.register(r'campaigns', CampaignViewSet, basename='campaign')
 router.register(r'support/messages', SupportMessageViewSet, basename='support-message')
 router.register(r'audit-logs', AuditLogViewSet, basename='audit-log')
 router.register(r'team/members', TeamMemberViewSet, basename='team-member')
+router.register(r'team/tasks', TaskViewSet, basename='team-task')
 router.register(r'products', ProductViewSet, basename='product')
 router.register(r'orders', OrderViewSet, basename='order')
 
@@ -29,6 +32,12 @@ urlpatterns = [
     path('', include(router.urls)),
     path('team/invites/', TeamInviteView.as_view(), name='team-invites'),
     path('team/chat/', TeamChatView.as_view(), name='team-chat'),
+    path('team/reports/', WorkReportView.as_view(), name='team-reports'),
+    path('team/approvals/', WorkApprovalView.as_view(), name='team-approvals'),
+    path('team/channels/', TeamChannelView.as_view(), name='team-channels'),
+    path('team/channel-messages/', TeamChatMessageView.as_view(), name='team-channel-messages'),
+    path('team/analytics/', TeamAnalyticsView.as_view(), name='team-analytics'),
+    path('team/ai-copilot/', TeamAICopilotView.as_view(), name='team-ai-copilot'),
     path('auth/register', RegisterView.as_view(), name='register'),
     path('auth/login', LoginView.as_view(), name='login'),
     path('auth/google-login', GoogleLoginView.as_view(), name='google-login'),

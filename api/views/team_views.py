@@ -13,8 +13,339 @@ from rest_framework.views import APIView
 from django.http import HttpResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
-from ..serializers import RegisterSerializer, UserSerializer, ClientSerializer, AutomationSerializer, WorkflowSerializer, ContactSerializer, TemplateSerializer, CampaignSerializer, SupportMessageSerializer, AuditLogSerializer, TeamInviteSerializer, ProductSerializer, OrderSerializer
-from ..models import User, Client, Automation, Message, Workflow, KnowledgeDocument, KnowledgeChunk, Contact, Template, Campaign, SupportMessage, AuditLog, TeamInvite, Product, Order
+from ..serializers import (
+    RegisterSerializer, UserSerializer, ClientSerializer, AutomationSerializer, WorkflowSerializer,
+    ContactSerializer, TemplateSerializer, CampaignSerializer, SupportMessageSerializer, AuditLogSerializer,
+    TeamInviteSerializer, ProductSerializer, OrderSerializer, TaskSerializer, TaskCommentSerializer,
+    WorkReportSerializer, WorkApprovalSerializer, TeamChannelSerializer, TeamChatMessageSerializer
+)
+from ..models import (
+    User, Client, Automation, Message, Workflow, KnowledgeDocument, KnowledgeChunk, Contact, Template,
+    Campaign, SupportMessage, AuditLog, TeamInvite, Product, Order, Task, TaskComment, WorkReport,
+    WorkApproval, TeamChannel, TeamChatMessage
+)
+from django.utils import timezone
+import datetime
+
+class TaskViewSet(viewsets.ModelViewSet):
+    serializer_class = TaskSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if not getattr(user, 'client', None):
+            return Task.objects.none()
+        
+        qs = Task.objects.filter(client=user.client, is_archived=False)
+        
+        # Filtering parameters
+        status_param = self.request.query_params.get('status')
+        priority_param = self.request.query_params.get('priority')
+        department_param = self.request.query_params.get('department')
+        assigned_param = self.request.query_params.get('assigned_to')
+        search_query = self.request.query_params.get('search')
+        
+        if status_param:
+            qs = qs.filter(status=status_param.upper())
+        if priority_param:
+            qs = qs.filter(priority=priority_param.upper())
+        if department_param:
+            qs = qs.filter(department__iexact=department_param)
+        if assigned_param:
+            qs = qs.filter(assigned_to__id=assigned_param)
+        if search_query:
+            qs = qs.filter(title__icontains=search_query)
+            
+        return qs.order_by('-created_at')
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        serializer.save(client=user.client, created_by=user)
+
+    @action(detail=True, methods=['post'])
+    def toggle_checklist(self, request, pk=None):
+        task = self.get_object()
+        item_id = request.data.get('item_id')
+        checklist = task.checklist or []
+        
+        for item in checklist:
+            if str(item.get('id')) == str(item_id):
+                item['completed'] = not item.get('completed', False)
+                break
+                
+        task.checklist = checklist
+        # Recalculate progress percentage
+        if checklist:
+            completed_count = sum(1 for i in checklist if i.get('completed'))
+            task.progress_percentage = int((completed_count / len(checklist)) * 100)
+            if task.progress_percentage == 100 and task.status not in ['COMPLETED', 'WAITING_APPROVAL']:
+                task.status = 'UNDER_REVIEW'
+        task.save()
+        return Response(TaskSerializer(task).data)
+
+    @action(detail=True, methods=['post'])
+    def submit_for_approval(self, request, pk=None):
+        task = self.get_object()
+        notes = request.data.get('notes', '')
+        task.status = 'WAITING_APPROVAL'
+        task.save()
+        
+        approval = WorkApproval.objects.create(
+            task=task,
+            employee=request.user,
+            reviewer=task.created_by or request.user.reporting_manager,
+            status='PENDING',
+            submission_notes=notes
+        )
+        return Response({'task': TaskSerializer(task).data, 'approval_id': str(approval.id)})
+
+    @action(detail=True, methods=['post'])
+    def add_comment(self, request, pk=None):
+        task = self.get_object()
+        text = request.data.get('text')
+        if not text:
+            return Response({'error': 'Text is required'}, status=400)
+        
+        comment = TaskComment.objects.create(
+            task=task,
+            author=request.user,
+            text=text,
+            attachments=request.data.get('attachments', []),
+            mentions=request.data.get('mentions', [])
+        )
+        return Response(TaskCommentSerializer(comment).data, status=201)
+
+    @action(detail=True, methods=['post'])
+    def clone(self, request, pk=None):
+        task = self.get_object()
+        cloned_task = Task.objects.create(
+            client=task.client,
+            title=f"Copy of {task.title}",
+            description=task.description,
+            priority=task.priority,
+            status='NOT_STARTED',
+            created_by=request.user,
+            department=task.department,
+            estimated_hours=task.estimated_hours,
+            checklist=task.checklist
+        )
+        cloned_task.assigned_to.set(task.assigned_to.all())
+        return Response(TaskSerializer(cloned_task).data, status=201)
+
+
+class WorkReportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not getattr(request.user, 'client', None):
+            return Response([], status=200)
+        
+        qs = WorkReport.objects.filter(client=request.user.client)
+        # If regular employee, only show their reports unless manager/admin
+        if request.user.enterprise_role in ['EMPLOYEE', 'INTERN']:
+            qs = qs.filter(employee=request.user)
+            
+        serializer = WorkReportSerializer(qs.order_by('-report_date'), many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        if not getattr(request.user, 'client', None):
+            return Response({'error': 'No client associated'}, status=400)
+            
+        todays_work = request.data.get('todays_work')
+        if not todays_work:
+            return Response({'error': "Today's work details are required"}, status=400)
+            
+        report = WorkReport.objects.create(
+            client=request.user.client,
+            employee=request.user,
+            report_date=request.data.get('report_date', timezone.now().date()),
+            todays_work=todays_work,
+            completed_work=request.data.get('completed_work', ''),
+            remaining_work=request.data.get('remaining_work', ''),
+            blockers=request.data.get('blockers', ''),
+            need_help=request.data.get('need_help', False),
+            next_steps=request.data.get('next_steps', ''),
+            hours_worked=request.data.get('hours_worked', 8.0),
+            attachments=request.data.get('attachments', [])
+        )
+        return Response(WorkReportSerializer(report).data, status=201)
+
+
+class WorkApprovalView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not getattr(request.user, 'client', None):
+            return Response([], status=200)
+            
+        qs = WorkApproval.objects.filter(task__client=request.user.client)
+        status_filter = request.query_params.get('status')
+        if status_filter:
+            qs = qs.filter(status=status_filter.upper())
+            
+        serializer = WorkApprovalSerializer(qs.order_by('-submitted_at'), many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        approval_id = request.data.get('approval_id')
+        action_type = request.data.get('action') # APPROVE or REQUEST_CHANGES
+        feedback = request.data.get('feedback', '')
+        
+        try:
+            approval = WorkApproval.objects.get(id=approval_id, task__client=request.user.client)
+        except WorkApproval.DoesNotExist:
+            return Response({'error': 'Approval request not found'}, status=404)
+            
+        approval.reviewer = request.user
+        approval.feedback_notes = feedback
+        approval.reviewed_at = timezone.now()
+        
+        if action_type == 'APPROVE':
+            approval.status = 'APPROVED'
+            approval.task.status = 'COMPLETED'
+            approval.task.progress_percentage = 100
+            approval.task.save()
+        else:
+            approval.status = 'CHANGES_REQUESTED'
+            approval.task.status = 'IN_PROGRESS'
+            approval.task.save()
+            
+        approval.save()
+        return Response(WorkApprovalSerializer(approval).data)
+
+
+class TeamChannelView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not getattr(request.user, 'client', None):
+            return Response([], status=200)
+            
+        channels = TeamChannel.objects.filter(client=request.user.client)
+        if not channels.exists():
+            # Seed default channels if none exist
+            general = TeamChannel.objects.create(
+                client=request.user.client,
+                name='general',
+                description='Company wide discussions & updates',
+                channel_type='PUBLIC',
+                created_by=request.user
+            )
+            announcements = TeamChannel.objects.create(
+                client=request.user.client,
+                name='announcements',
+                description='Official management announcements',
+                channel_type='PUBLIC',
+                created_by=request.user
+            )
+            channels = [general, announcements]
+            
+        serializer = TeamChannelSerializer(channels, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        if not getattr(request.user, 'client', None):
+            return Response({'error': 'No client associated'}, status=400)
+            
+        name = request.data.get('name', '').strip().lower().replace(' ', '-')
+        if not name:
+            return Response({'error': 'Channel name is required'}, status=400)
+            
+        channel = TeamChannel.objects.create(
+            client=request.user.client,
+            name=name,
+            description=request.data.get('description', ''),
+            channel_type=request.data.get('channel_type', 'PUBLIC'),
+            created_by=request.user
+        )
+        return Response(TeamChannelSerializer(channel).data, status=201)
+
+
+class TeamChatMessageView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        channel_id = request.query_params.get('channel_id')
+        if not channel_id:
+            return Response([], status=200)
+            
+        messages = TeamChatMessage.objects.filter(channel__id=channel_id).order_by('created_at')[:100]
+        serializer = TeamChatMessageSerializer(messages, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        channel_id = request.data.get('channel_id')
+        text = request.data.get('text', '')
+        if not channel_id or not text:
+            return Response({'error': 'Channel ID and text are required'}, status=400)
+            
+        try:
+            channel = TeamChannel.objects.get(id=channel_id, client=request.user.client)
+        except TeamChannel.DoesNotExist:
+            return Response({'error': 'Channel not found'}, status=404)
+            
+        message = TeamChatMessage.objects.create(
+            channel=channel,
+            sender=request.user,
+            text=text,
+            attachments=request.data.get('attachments', []),
+            is_announcement=request.data.get('is_announcement', False)
+        )
+        return Response(TeamChatMessageSerializer(message).data, status=201)
+
+
+class TeamAnalyticsView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not getattr(request.user, 'client', None):
+            return Response({'error': 'No client'}, status=400)
+            
+        client = request.user.client
+        tasks = Task.objects.filter(client=client, is_archived=False)
+        total_tasks = tasks.count()
+        completed_tasks = tasks.filter(status='COMPLETED').count()
+        in_progress_tasks = tasks.filter(status='IN_PROGRESS').count()
+        blocked_tasks = tasks.filter(status='BLOCKED').count()
+        under_review_tasks = tasks.filter(status__in=['UNDER_REVIEW', 'WAITING_APPROVAL']).count()
+        
+        completion_rate = int((completed_tasks / total_tasks * 100)) if total_tasks > 0 else 100
+        
+        reports_count = WorkReport.objects.filter(client=client).count()
+        members_count = User.objects.filter(client=client).count()
+        
+        return Response({
+            'total_tasks': total_tasks,
+            'completed_tasks': completed_tasks,
+            'in_progress_tasks': in_progress_tasks,
+            'blocked_tasks': blocked_tasks,
+            'under_review_tasks': under_review_tasks,
+            'completion_rate': completion_rate,
+            'total_reports': reports_count,
+            'total_members': members_count
+        })
+
+
+class TeamAICopilotView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        action_type = request.data.get('action') # GENERATE_TASK, SUMMARIZE_REPORTS, DETECT_BLOCKERS
+        prompt_text = request.data.get('prompt', '')
+        
+        from ..services.ai_service import get_ai_response
+        system_prompt = "You are a Senior Enterprise Project Manager and AI Productivity Copilot."
+        
+        if action_type == 'GENERATE_TASK':
+            user_prompt = f"Generate a detailed task breakdown with checklist items for: {prompt_text}"
+        elif action_type == 'SUMMARIZE_REPORTS':
+            user_prompt = f"Summarize daily progress reports and highlight key achievements & blockers: {prompt_text}"
+        else:
+            user_prompt = f"Analyze blockers and suggest actionable solutions: {prompt_text}"
+            
+        ai_res = get_ai_response(system_prompt, user_prompt)
+        return Response({'result': ai_res})
 import requests
 import os
 import json
