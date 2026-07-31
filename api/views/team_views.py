@@ -16,13 +16,14 @@ from django.utils.decorators import method_decorator
 from ..serializers import (
     RegisterSerializer, UserSerializer, ClientSerializer, AutomationSerializer, WorkflowSerializer,
     ContactSerializer, TemplateSerializer, CampaignSerializer, SupportMessageSerializer, AuditLogSerializer,
-    TeamInviteSerializer, ProductSerializer, OrderSerializer, TaskSerializer, TaskCommentSerializer,
-    WorkReportSerializer, WorkApprovalSerializer, TeamChannelSerializer, TeamChatMessageSerializer
+    TeamInviteSerializer, ProductSerializer, OrderSerializer, ProjectSerializer, TaskSerializer, TaskCommentSerializer,
+    WorkReportSerializer, WorkApprovalSerializer, TeamChannelSerializer, TeamChatMessageSerializer,
+    AttendanceSerializer, LeaveRequestSerializer
 )
 from ..models import (
     User, Client, Automation, Message, Workflow, KnowledgeDocument, KnowledgeChunk, Contact, Template,
-    Campaign, SupportMessage, AuditLog, TeamInvite, Product, Order, Task, TaskComment, WorkReport,
-    WorkApproval, TeamChannel, TeamChatMessage
+    Campaign, SupportMessage, AuditLog, TeamInvite, Product, Order, Project, Task, TaskComment, WorkReport,
+    WorkApproval, TeamChannel, TeamChatMessage, Attendance, LeaveRequest
 )
 from django.utils import timezone
 import datetime
@@ -440,6 +441,111 @@ class TeamChatView(views.APIView):
         from ..services.team_service import TeamService
         result = TeamService.send_chat_message(request.user.client, request.user, body)
         return Response(result, status=status.HTTP_201_CREATED)
+
+
+class ProjectViewSet(viewsets.ModelViewSet):
+    serializer_class = ProjectSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if not getattr(user, 'client', None):
+            return Project.objects.none()
+        qs = Project.objects.filter(client=user.client)
+        status_param = self.request.query_params.get('status')
+        if status_param:
+            qs = qs.filter(status=status_param.upper())
+        return qs.order_by('-created_at')
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        project = serializer.save(client=user.client, owner=user)
+        # Create an associated project channel automatically
+        channel_name = f"proj-{project.name.lower().replace(' ', '-')[:25]}"
+        TeamChannel.objects.get_or_create(
+            client=user.client,
+            name=channel_name,
+            defaults={
+                'description': f"Official discussion channel for {project.name}",
+                'channel_type': 'PUBLIC',
+                'created_by': user
+            }
+        )
+
+
+class AttendanceViewSet(viewsets.ModelViewSet):
+    serializer_class = AttendanceSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if not getattr(user, 'client', None):
+            return Attendance.objects.none()
+        qs = Attendance.objects.filter(client=user.client)
+        if user.enterprise_role in ['EMPLOYEE', 'INTERN']:
+            qs = qs.filter(user=user)
+        return qs.order_by('-date')
+
+    @action(detail=False, methods=['post'])
+    def clock_in(self, request):
+        user = request.user
+        if not getattr(user, 'client', None):
+            return Response({'error': 'No client associated'}, status=400)
+        today = timezone.now().date()
+        attendance, created = Attendance.objects.get_or_create(
+            client=user.client,
+            user=user,
+            date=today,
+            defaults={'clock_in': timezone.now(), 'status': 'PRESENT'}
+        )
+        if not created and not attendance.clock_in:
+            attendance.clock_in = timezone.now()
+            attendance.status = 'PRESENT'
+            attendance.save()
+        return Response(AttendanceSerializer(attendance).data)
+
+    @action(detail=False, methods=['post'])
+    def clock_out(self, request):
+        user = request.user
+        today = timezone.now().date()
+        try:
+            attendance = Attendance.objects.get(client=user.client, user=user, date=today)
+            attendance.clock_out = timezone.now()
+            if attendance.clock_in:
+                diff = (attendance.clock_out - attendance.clock_in).total_seconds() / 3600.0
+                attendance.working_hours = round(diff, 2)
+            attendance.save()
+            return Response(AttendanceSerializer(attendance).data)
+        except Attendance.DoesNotExist:
+            return Response({'error': 'No clock-in record found for today'}, status=404)
+
+
+class LeaveRequestViewSet(viewsets.ModelViewSet):
+    serializer_class = LeaveRequestSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if not getattr(user, 'client', None):
+            return LeaveRequest.objects.none()
+        qs = LeaveRequest.objects.filter(client=user.client)
+        if user.enterprise_role in ['EMPLOYEE', 'INTERN']:
+            qs = qs.filter(user=user)
+        return qs.order_by('-created_at')
+
+    def perform_create(self, serializer):
+        serializer.save(client=self.request.user.client, user=self.request.user)
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        leave = self.get_object()
+        action_type = request.data.get('action') # APPROVED or REJECTED
+        leave.status = 'APPROVED' if action_type == 'APPROVED' else 'REJECTED'
+        leave.reviewed_by = request.user
+        leave.reviewed_at = timezone.now()
+        leave.save()
+        return Response(LeaveRequestSerializer(leave).data)
+
 
 
 

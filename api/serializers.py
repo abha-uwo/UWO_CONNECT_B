@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, Client, Automation, Workflow, GlobalSetting, Contact, Template, Campaign, SupportMessage, AuditLog, TeamInvite, KnowledgeDocument, TeamMessage, Product, Order, Task, TaskComment, WorkReport, WorkApproval, TeamChannel, TeamChatMessage
+from .models import User, Client, Automation, Workflow, GlobalSetting, Contact, Template, Campaign, SupportMessage, AuditLog, TeamInvite, KnowledgeDocument, TeamMessage, Product, Order, Project, Task, TaskComment, WorkReport, WorkApproval, TeamChannel, TeamChatMessage, Attendance, LeaveRequest
 from .repositories.contact_repository import ContactRepository
 from .repositories.workflow_repository import WorkflowRepository
 from .repositories.automation_repository import AutomationRepository
@@ -54,7 +54,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'name', 'first_name', 'role', 'enterprise_role', 'department', 'designation', 'reporting_manager', 'reporting_manager_name', 'status', 'client', 'permissions', 'is_online', 'last_active_at')
+        fields = ('id', 'username', 'email', 'name', 'first_name', 'role', 'enterprise_role', 'department', 'designation', 'reporting_manager', 'reporting_manager_name', 'status', 'client', 'permissions', 'assigned_platforms', 'employee_id', 'joining_date', 'working_hours', 'salary_visibility', 'skills', 'availability_status', 'is_online', 'last_active_at')
         extra_kwargs = {'password': {'write_only': True}}
 
 class TeamInviteSerializer(serializers.ModelSerializer):
@@ -313,4 +313,43 @@ class TeamChatMessageSerializer(serializers.ModelSerializer):
         model = TeamChatMessage
         fields = '__all__'
         read_only_fields = ('sender', 'created_at')
+
+
+class ProjectSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    client = ObjectIdField(read_only=True)
+    owner_name = serializers.ReadOnlyField(source='owner.username')
+    task_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Project
+        fields = '__all__'
+        read_only_fields = ('client', 'owner', 'created_at', 'updated_at')
+
+    def get_task_count(self, obj):
+        return obj.tasks.count()
+
+
+class AttendanceSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    client = ObjectIdField(read_only=True)
+    user_name = serializers.ReadOnlyField(source='user.username')
+
+    class Meta:
+        model = Attendance
+        fields = '__all__'
+        read_only_fields = ('client', 'user', 'created_at')
+
+
+class LeaveRequestSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    client = ObjectIdField(read_only=True)
+    user_name = serializers.ReadOnlyField(source='user.username')
+    reviewer_name = serializers.ReadOnlyField(source='reviewed_by.username')
+
+    class Meta:
+        model = LeaveRequest
+        fields = '__all__'
+        read_only_fields = ('client', 'user', 'created_at')
+
 
