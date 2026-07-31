@@ -10,6 +10,7 @@ from .views import (
     SuggestDraftView, TeamMemberViewSet, TeamInviteView, TeamChatView, ProductViewSet, OrderViewSet,
     CreatePaymentOrderView, VerifyPaymentView, PaymentHistoryView, CashfreeWebhookView, RazorpayWebhookView,
     WhatsAppEmbeddedSignupView, GmailConnectView, GmailCallbackView, GmailSyncView,
+    InstagramEmbeddedSignupView, FacebookEmbeddedSignupView,
     ProjectViewSet, TaskViewSet, WorkReportView, WorkApprovalView, TeamChannelView,
     TeamChatMessageView, TeamAnalyticsView, TeamAICopilotView, AttendanceViewSet, LeaveRequestViewSet
 )
@@ -53,6 +54,8 @@ urlpatterns = [
     path('auth/forgot-password/verify-otp', ForgotPasswordVerifyOTPView.as_view(), name='forgot-password-verify-otp'),
     path('auth/forgot-password/reset', ForgotPasswordResetView.as_view(), name='forgot-password-reset'),
     path('auth/whatsapp/embedded-signup', WhatsAppEmbeddedSignupView.as_view(), name='whatsapp-embedded-signup'),
+    path('auth/instagram/embedded-signup', InstagramEmbeddedSignupView.as_view(), name='instagram-embedded-signup'),
+    path('auth/facebook/embedded-signup', FacebookEmbeddedSignupView.as_view(), name='facebook-embedded-signup'),
     path('profile', ProfileView.as_view(), name='profile'),
     path('messages/', ClientMessagesView.as_view(), name='client-messages'),
     path('messages/suggest_draft/', SuggestDraftView.as_view(), name='suggest-draft'),

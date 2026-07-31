@@ -315,9 +315,152 @@ class WhatsAppEmbeddedSignupView(APIView):
             "phone_number_id": phone_number_id,
             "display_phone_number": display_phone_number
         }
+        client.whatsapp_access_token = access_token
+        client.whatsapp_waba_id = waba_id
+        client.whatsapp_phone_number_id = phone_number_id
+        client.phone_number = display_phone_number
         client.save()
         
         return Response({
             "message": "WhatsApp Business connected successfully",
             "whatsapp_config": client.whatsapp_config
+        })
+
+class InstagramEmbeddedSignupView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        code = request.data.get('code')
+        if not code:
+            return Response({"error": "No code provided"}, status=400)
+
+        import os
+        import requests
+        
+        client_id = os.getenv('FACEBOOK_APP_ID')
+        client_secret = os.getenv('FACEBOOK_APP_SECRET')
+        
+        if not client_id or not client_secret:
+            return Response({"error": "Facebook App credentials not configured on server."}, status=500)
+
+        # 1. Exchange code for access token
+        token_url = "https://graph.facebook.com/v20.0/oauth/access_token"
+        token_payload = {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "redirect_uri": "https://uwoconnect.aisa24.com/client/channels",
+            "code": code
+        }
+        
+        token_res = requests.get(token_url, params=token_payload)
+        token_data = token_res.json()
+        
+        if "error" in token_data:
+            return Response({"error": "Failed to exchange code", "details": token_data}, status=400)
+            
+        access_token = token_data.get('access_token')
+        
+        # 2. Get Facebook Pages and linked Instagram accounts
+        accounts_url = f"https://graph.facebook.com/v20.0/me/accounts?fields=id,name,instagram_business_account&access_token={access_token}"
+        accounts_res = requests.get(accounts_url)
+        accounts_data = accounts_res.json()
+        
+        if "error" in accounts_data or not accounts_data.get('data'):
+            return Response({"error": "Could not find connected Facebook Pages", "details": accounts_data}, status=400)
+            
+        # Find the first page with an instagram_business_account
+        ig_account = None
+        fb_page_id = None
+        fb_page_name = None
+        
+        for page in accounts_data.get('data', []):
+            if 'instagram_business_account' in page:
+                ig_account = page['instagram_business_account']['id']
+                fb_page_id = page['id']
+                fb_page_name = page.get('name', 'Facebook Page')
+                break
+                
+        if not ig_account:
+            return Response({"error": "No Instagram Business Account linked to the connected Facebook Pages."}, status=400)
+            
+        # 3. Get Instagram Account username/name (Optional, but good for UI)
+        ig_url = f"https://graph.facebook.com/v20.0/{ig_account}?fields=username,name&access_token={access_token}"
+        ig_res = requests.get(ig_url).json()
+        ig_username = ig_res.get('username', ig_res.get('name', fb_page_name))
+            
+        # 4. Save to Client
+        client = request.user.client
+        client.instagram_config = {
+            "access_token": access_token,
+            "instagram_business_id": ig_account,
+            "page_id": fb_page_id,
+            "page_name": ig_username
+        }
+        client.instagram_enabled = True
+        client.save()
+        
+        return Response({
+            "message": "Instagram Business connected successfully",
+            "instagram_config": client.instagram_config
+        })
+
+class FacebookEmbeddedSignupView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        code = request.data.get('code')
+        if not code:
+            return Response({"error": "No code provided"}, status=400)
+
+        import os
+        import requests
+        
+        client_id = os.getenv('FACEBOOK_APP_ID')
+        client_secret = os.getenv('FACEBOOK_APP_SECRET')
+        
+        if not client_id or not client_secret:
+            return Response({"error": "Facebook App credentials not configured on server."}, status=500)
+
+        # 1. Exchange code for access token
+        token_url = "https://graph.facebook.com/v20.0/oauth/access_token"
+        token_payload = {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "redirect_uri": "https://uwoconnect.aisa24.com/client/channels",
+            "code": code
+        }
+        
+        token_res = requests.get(token_url, params=token_payload)
+        token_data = token_res.json()
+        
+        if "error" in token_data:
+            return Response({"error": "Failed to exchange code", "details": token_data}, status=400)
+            
+        access_token = token_data.get('access_token')
+        
+        # 2. Get Facebook Pages
+        accounts_url = f"https://graph.facebook.com/v20.0/me/accounts?access_token={access_token}"
+        accounts_res = requests.get(accounts_url)
+        accounts_data = accounts_res.json()
+        
+        if "error" in accounts_data or not accounts_data.get('data'):
+            return Response({"error": "Could not find connected Facebook Pages", "details": accounts_data}, status=400)
+            
+        # 3. Save first page to Client
+        page = accounts_data['data'][0]
+        fb_page_id = page['id']
+        fb_page_name = page.get('name', 'Facebook Page')
+        
+        client = request.user.client
+        client.facebook_config = {
+            "access_token": access_token,
+            "page_id": fb_page_id,
+            "page_name": fb_page_name
+        }
+        client.facebook_enabled = True
+        client.save()
+        
+        return Response({
+            "message": "Facebook Page connected successfully",
+            "facebook_config": client.facebook_config
         })
