@@ -9,4 +9,9 @@ from .team_views import *
 from .commerce_views import *
 from .payment_views import *
 from .gmail_views import *
+from .onedrive_views import *
+from .google_calendar_views import *
+from .google_sheets_views import *
+from .google_docs_views import *
+from .google_slides_views import *
 
