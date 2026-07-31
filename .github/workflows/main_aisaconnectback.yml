@@ -59,4 +59,4 @@ jobs:
         with:
           app-name: 'aisaconnectback'
           slot-name: 'Production'
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_C4A55F4EE4F8406E8B179251632C4796 }}
+          publish-profile: ${{ secrets.AZURE_PUBLISH_PROFILE }}
