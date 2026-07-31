@@ -10,7 +10,7 @@ from .views import (
     SuggestDraftView, TeamMemberViewSet, TeamInviteView, TeamChatView, ProductViewSet, OrderViewSet,
     CreatePaymentOrderView, VerifyPaymentView, PaymentHistoryView, CashfreeWebhookView, RazorpayWebhookView,
     WhatsAppEmbeddedSignupView, GmailConnectView, GmailCallbackView, GmailSyncView,
-    InstagramEmbeddedSignupView, FacebookEmbeddedSignupView,
+    InstagramEmbeddedSignupView, FacebookEmbeddedSignupView, InstagramOAuthCallbackView,
     ProjectViewSet, TaskViewSet, WorkReportView, WorkApprovalView, TeamChannelView,
     TeamChatMessageView, TeamAnalyticsView, TeamAICopilotView, AttendanceViewSet, LeaveRequestViewSet
 )
@@ -56,6 +56,7 @@ urlpatterns = [
     path('auth/whatsapp/embedded-signup', WhatsAppEmbeddedSignupView.as_view(), name='whatsapp-embedded-signup'),
     path('auth/instagram/embedded-signup', InstagramEmbeddedSignupView.as_view(), name='instagram-embedded-signup'),
     path('auth/facebook/embedded-signup', FacebookEmbeddedSignupView.as_view(), name='facebook-embedded-signup'),
+    path('auth/instagram/oauth-callback', InstagramOAuthCallbackView.as_view(), name='instagram-oauth-callback'),
     path('profile', ProfileView.as_view(), name='profile'),
     path('messages/', ClientMessagesView.as_view(), name='client-messages'),
     path('messages/suggest_draft/', SuggestDraftView.as_view(), name='suggest-draft'),
