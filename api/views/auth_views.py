@@ -315,6 +315,11 @@ class WhatsAppEmbeddedSignupView(APIView):
             "phone_number_id": phone_number_id,
             "display_phone_number": display_phone_number
         }
+        client.whatsapp_phone_number_id = phone_number_id
+        client.whatsapp_access_token = access_token
+        client.whatsapp_waba_id = waba_id
+        client.phone_number = display_phone_number
+        client.whatsapp_enabled = True
         client.save()
         
         return Response({
