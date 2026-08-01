@@ -472,6 +472,37 @@ class ProjectViewSet(viewsets.ModelViewSet):
             }
         )
 
+    def destroy(self, request, *args, **kwargs):
+        pk = kwargs.get('pk')
+        client = getattr(request.user, 'client', None)
+        if not client:
+            return Response({'error': 'No client associated'}, status=400)
+            
+        from bson import ObjectId
+        project = None
+        try:
+            project = Project.objects.get(id=pk, client=client)
+        except Exception:
+            try:
+                project = Project.objects.get(id=ObjectId(pk), client=client)
+            except Exception:
+                pass
+
+        if not project:
+            # Fallback filter delete
+            deleted_count, _ = Project.objects.filter(client=client, id=pk).delete()
+            if deleted_count == 0:
+                try:
+                    deleted_count, _ = Project.objects.filter(client=client, id=ObjectId(pk)).delete()
+                except Exception:
+                    pass
+            if deleted_count > 0:
+                return Response(status=204)
+            return Response({'error': 'Project not found'}, status=404)
+
+        project.delete()
+        return Response(status=204)
+
 
 class AttendanceViewSet(viewsets.ModelViewSet):
     serializer_class = AttendanceSerializer
