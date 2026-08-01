@@ -89,7 +89,6 @@ urlpatterns = [
     path('payments/verify-order', VerifyPaymentView.as_view(), name='payment-verify-order'),
     path('payments/history', PaymentHistoryView.as_view(), name='payment-history'),
     path('payments/webhook', RazorpayWebhookView.as_view(), name='payment-webhook'),
-<<<<<<< HEAD
     # OneDrive Integration
     path('onedrive/connect', OneDriveConnectView.as_view(), name='onedrive-connect'),
     path('onedrive/connect/', OneDriveConnectView.as_view()),
