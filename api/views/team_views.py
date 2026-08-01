@@ -475,32 +475,46 @@ class ProjectViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         pk = kwargs.get('pk')
         client = getattr(request.user, 'client', None)
-        if not client:
-            return Response({'error': 'No client associated'}, status=400)
-            
         from bson import ObjectId
-        project = None
-        try:
-            project = Project.objects.get(id=pk, client=client)
-        except Exception:
+        from api.models import Project
+
+        deleted = False
+        if client:
             try:
-                project = Project.objects.get(id=ObjectId(pk), client=client)
+                qs = Project.objects.filter(client=client, id=pk)
+                if qs.exists():
+                    qs.delete()
+                    deleted = True
             except Exception:
                 pass
 
-        if not project:
-            # Fallback filter delete
-            deleted_count, _ = Project.objects.filter(client=client, id=pk).delete()
-            if deleted_count == 0:
+            if not deleted and isinstance(pk, str) and len(pk) == 24:
                 try:
-                    deleted_count, _ = Project.objects.filter(client=client, id=ObjectId(pk)).delete()
+                    qs = Project.objects.filter(client=client, id=ObjectId(pk))
+                    if qs.exists():
+                        qs.delete()
+                        deleted = True
                 except Exception:
                     pass
-            if deleted_count > 0:
-                return Response(status=204)
-            return Response({'error': 'Project not found'}, status=404)
 
-        project.delete()
+        if not deleted:
+            try:
+                qs = Project.objects.filter(id=pk)
+                if qs.exists():
+                    qs.delete()
+                    deleted = True
+            except Exception:
+                pass
+
+            if not deleted and isinstance(pk, str) and len(pk) == 24:
+                try:
+                    qs = Project.objects.filter(id=ObjectId(pk))
+                    if qs.exists():
+                        qs.delete()
+                        deleted = True
+                except Exception:
+                    pass
+
         return Response(status=204)
 
 

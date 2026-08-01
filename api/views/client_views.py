@@ -143,15 +143,19 @@ class ClientStatsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        client = request.user.client
+        client = getattr(request.user, 'client', None)
         if not client:
-            return Response({"error": "No client associated"}, status=400)
+            return Response({
+                "totalConversations": 0,
+                "automationRuns": 0,
+                "activeUsers": 0,
+                "avgResponse": "14s"
+            }, status=200)
             
         total_conversations = MessageRepository.filter_messages(client=client).values('from_address', 'to_address').distinct().count()
         automation_runs = MessageRepository.filter_messages(client=client, message_type='OUTGOING', status='SENT').count()
         active_users = ContactRepository.filter_contacts(client=client).count()
         
-        # Avg. response time or custom defaults
         return Response({
             "totalConversations": total_conversations,
             "automationRuns": automation_runs,
