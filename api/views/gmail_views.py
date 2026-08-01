@@ -9,6 +9,7 @@ from api.models import Client
 
 # Allow HTTP traffic for local development
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
+os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
 
 SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
 

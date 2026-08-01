@@ -94,33 +94,124 @@ def find_relevant_chunks(query_embedding, chunks_with_embeddings, top_k=5):
 
 # ===== AI RESPONSE FUNCTIONS =====
 
-def get_ai_response(prompt, context=""):
+def get_ai_response(prompt, context="", client_model=None):
     """
     Generates a response using OpenAI based on the provided prompt and context.
+    Supports tool calling for Google Calendar if client_model is provided.
     """
+    import json
     try:
-        system_prompt = f"You are an AI assistant for a business. Context: {context}. Be helpful, professional, and concise."
+        system_prompt = f"You are an AI assistant for a business. Context: {context}. Be helpful, professional, and concise. Only book appointments if the user explicitly confirms the time."
         
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ]
+
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "check_calendar_availability",
+                    "description": "Check if there are free time slots in the business Google Calendar for a specific date.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "date": {
+                                "type": "string",
+                                "description": "The date to check in YYYY-MM-DD format (e.g., '2023-10-15')."
+                            }
+                        },
+                        "required": ["date"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "book_appointment",
+                    "description": "Book an appointment on the business Google Calendar.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "date": {
+                                "type": "string",
+                                "description": "The date of the appointment in YYYY-MM-DD format."
+                            },
+                            "time": {
+                                "type": "string",
+                                "description": "The time of the appointment in 24-hour format HH:MM (e.g., '14:30' for 2:30 PM)."
+                            },
+                            "customer_name": {
+                                "type": "string",
+                                "description": "The name of the customer booking the appointment."
+                            }
+                        },
+                        "required": ["date", "time", "customer_name"]
+                    }
+                }
+            }
+        ]
+
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt}
-            ],
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
             max_tokens=500
         )
-        return response.choices[0].message.content
+        
+        response_message = response.choices[0].message
+        
+        # Check if the model decided to call any tools
+        if response_message.tool_calls and client_model and client_model.google_calendar_enabled:
+            from .google_calendar_service import GoogleCalendarService
+            messages.append(response_message)  # Extend conversation with assistant's tool call
+            
+            for tool_call in response_message.tool_calls:
+                function_name = tool_call.function.name
+                function_args = json.loads(tool_call.function.arguments)
+                
+                tool_result = ""
+                if function_name == "check_calendar_availability":
+                    target_date = function_args.get("date")
+                    tool_result = GoogleCalendarService.check_availability(client_model, target_date)
+                elif function_name == "book_appointment":
+                    target_date = function_args.get("date")
+                    target_time = function_args.get("time")
+                    customer_name = function_args.get("customer_name")
+                    tool_result = GoogleCalendarService.book_appointment(client_model, target_date, target_time, customer_name)
+                    
+                messages.append({
+                    "tool_call_id": tool_call.id,
+                    "role": "tool",
+                    "name": function_name,
+                    "content": tool_result,
+                })
+                
+            # Send the tool results back to the model to get the final textual response
+            second_response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                max_tokens=500
+            )
+            return second_response.choices[0].message.content
+            
+        return response_message.content
+        
     except Exception as e:
         print(f"AI Error: {str(e)}") 
         return "I'm sorry, I'm having trouble thinking right now. Please try again later."
 
 
-def get_rag_response(query, relevant_chunks):
+def get_rag_response(query, relevant_chunks, client_model=None):
     """
     RAG Response — AI sirf retrieved chunks ke basis pe jawab deta hai.
     
     relevant_chunks: list of dicts with 'text', 'score', 'doc_title'
+    Supports tool calling for Google Calendar if client_model is provided.
     """
+    import json
     try:
         # Build context from relevant chunks
         context_parts = []
@@ -143,16 +234,101 @@ STRICT RULES:
 {knowledge_context}
 --- END OF KNOWLEDGE ---"""
 
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": query}
+        ]
+
+        tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "check_calendar_availability",
+                    "description": "Check if there are free time slots in the business Google Calendar for a specific date.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "date": {
+                                "type": "string",
+                                "description": "The date to check in YYYY-MM-DD format."
+                            }
+                        },
+                        "required": ["date"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "book_appointment",
+                    "description": "Book an appointment on the business Google Calendar.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "date": {
+                                "type": "string",
+                                "description": "The date of the appointment in YYYY-MM-DD format."
+                            },
+                            "time": {
+                                "type": "string",
+                                "description": "The time of the appointment in 24-hour format HH:MM."
+                            },
+                            "customer_name": {
+                                "type": "string",
+                                "description": "The name of the customer booking the appointment."
+                            }
+                        },
+                        "required": ["date", "time", "customer_name"]
+                    }
+                }
+            }
+        ]
+
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": query}
-            ],
+            messages=messages,
+            tools=tools,
+            tool_choice="auto",
             max_tokens=600,
             temperature=0.3
         )
-        return response.choices[0].message.content
+        
+        response_message = response.choices[0].message
+        
+        # Check if the model decided to call any tools
+        if response_message.tool_calls and client_model and client_model.google_calendar_enabled:
+            from .google_calendar_service import GoogleCalendarService
+            messages.append(response_message)
+            
+            for tool_call in response_message.tool_calls:
+                function_name = tool_call.function.name
+                function_args = json.loads(tool_call.function.arguments)
+                
+                tool_result = ""
+                if function_name == "check_calendar_availability":
+                    target_date = function_args.get("date")
+                    tool_result = GoogleCalendarService.check_availability(client_model, target_date)
+                elif function_name == "book_appointment":
+                    target_date = function_args.get("date")
+                    target_time = function_args.get("time")
+                    customer_name = function_args.get("customer_name")
+                    tool_result = GoogleCalendarService.book_appointment(client_model, target_date, target_time, customer_name)
+                    
+                messages.append({
+                    "tool_call_id": tool_call.id,
+                    "role": "tool",
+                    "name": function_name,
+                    "content": tool_result,
+                })
+                
+            second_response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                max_tokens=600
+            )
+            return second_response.choices[0].message.content
+
+        return response_message.content
     except Exception as e:
         print(f"RAG AI Error: {str(e)}")
         return "I'm sorry, I'm unable to process your request right now. Please try again later."

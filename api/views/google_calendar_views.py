@@ -54,6 +54,7 @@ class GoogleCalendarConnectView(APIView):
 
         state = secrets.token_urlsafe(32)
         cache.set(f"gcal_state_{state}", client.id, timeout=600)
+        cache.set(f"calendar_state_{state}", client.id, timeout=3600)
 
         auth_url = (
             f"{GOOGLE_AUTH_ENDPOINT}"
@@ -71,6 +72,7 @@ class GoogleCalendarConnectView(APIView):
 class GoogleCalendarCallbackView(APIView):
     """Callback view called by Google after user approves Calendar access."""
     permission_classes = []
+    authentication_classes = []
 
     def get(self, request):
         frontend_url = os.environ.get("FRONTEND_URL", "http://localhost:3000")
@@ -84,11 +86,12 @@ class GoogleCalendarCallbackView(APIView):
         if not code or not state:
             return HttpResponseRedirect(f"{frontend_url}/client/channels?google_calendar_error=missing_code_or_state")
 
-        client_id_val = cache.get(f"gcal_state_{state}")
+        client_id_val = cache.get(f"gcal_state_{state}") or cache.get(f"calendar_state_{state}")
         if not client_id_val:
             return HttpResponseRedirect(f"{frontend_url}/client/channels?google_calendar_error=invalid_or_expired_state")
 
         cache.delete(f"gcal_state_{state}")
+        cache.delete(f"calendar_state_{state}")
 
         try:
             from api.models import Client

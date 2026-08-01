@@ -1,10 +1,12 @@
 """
 Google Calendar Service
-Handles interaction with Google Calendar API v3: token refresh, event listing, and event creation/booking.
+Handles interaction with Google Calendar API v3: token refresh, event listing, event creation/booking, and Meet link generation.
 """
 import os
+import uuid
 import logging
 import requests
+import datetime
 from datetime import datetime, timezone, timedelta
 
 logger = logging.getLogger(__name__)
@@ -31,16 +33,17 @@ def get_valid_calendar_token(client_obj):
     Refreshes automatically if expired or expiring soon.
     """
     config = client_obj.google_calendar_config or {}
-    access_token = config.get("access_token")
+    access_token = config.get("access_token") or config.get("token")
     refresh_token = config.get("refresh_token")
     token_expires_at = config.get("token_expires_at", 0)
 
-    # Check if current access_token is valid (with 5 min safety buffer)
     now_ts = datetime.now(timezone.utc).timestamp()
     if access_token and token_expires_at > (now_ts + 300):
         return access_token
 
     if not refresh_token:
+        if access_token:
+            return access_token
         raise ValueError("Google Calendar refresh token missing. Please re-authenticate.")
 
     creds = _get_credentials()
@@ -54,6 +57,8 @@ def get_valid_calendar_token(client_obj):
     resp = requests.post(GOOGLE_TOKEN_ENDPOINT, data=payload, timeout=20)
     if resp.status_code != 200:
         logger.error("Failed to refresh Google Calendar token: %s", resp.text)
+        if access_token:
+            return access_token
         raise ValueError(f"Failed to refresh Google token: {resp.text}")
 
     data = resp.json()
@@ -109,14 +114,13 @@ def list_upcoming_events(client_obj, max_results=15):
 
 def create_calendar_event(client_obj, summary, description="", start_iso=None, duration_minutes=30, attendee_email=None, location=""):
     """
-    Create a new event/meeting in the user's primary Google Calendar.
+    Create a new event/meeting in the user's primary Google Calendar with Google Meet link.
     """
     token = get_valid_calendar_token(client_obj)
     config = client_obj.google_calendar_config or {}
     calendar_id = config.get("primary_calendar_id", "primary")
 
     if not start_iso:
-        # Default to 1 hour from now
         start_dt = datetime.now(timezone.utc) + timedelta(hours=1)
     else:
         try:
@@ -124,9 +128,8 @@ def create_calendar_event(client_obj, summary, description="", start_iso=None, d
         except Exception:
             start_dt = datetime.now(timezone.utc) + timedelta(hours=1)
 
-    end_dt = start_dt + timedelta(minutes=duration_minutes)
+    end_dt = start_dt + timedelta(minutes=int(duration_minutes or 30))
 
-    import uuid
     event_body = {
         "summary": summary,
         "description": description,
@@ -142,9 +145,9 @@ def create_calendar_event(client_obj, summary, description="", start_iso=None, d
         "reminders": {
             "useDefault": False,
             "overrides": [
-                {"method": "email", "minutes": 1440},  # 24 hours before email
-                {"method": "popup", "minutes": 30},    # 30 mins before notification
-                {"method": "popup", "minutes": 10},    # 10 mins before notification
+                {"method": "email", "minutes": 1440},
+                {"method": "popup", "minutes": 30},
+                {"method": "popup", "minutes": 10},
             ]
         }
     }
@@ -174,3 +177,43 @@ def create_calendar_event(client_obj, summary, description="", start_iso=None, d
         "start": data.get("start", {}).get("dateTime"),
         "end": data.get("end", {}).get("dateTime"),
     }
+
+
+class GoogleCalendarService:
+    @staticmethod
+    def check_availability(client, target_date_str):
+        try:
+            token = get_valid_calendar_token(client)
+            url = f"{CALENDAR_API_BASE}/freeBusy"
+            headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+            payload = {
+                "timeMin": f"{target_date_str}T00:00:00Z",
+                "timeMax": f"{target_date_str}T23:59:59Z",
+                "items": [{"id": "primary"}]
+            }
+            resp = requests.post(url, json=payload, headers=headers, timeout=20)
+            if resp.status_code == 200:
+                data = resp.json()
+                busy_slots = data.get("calendars", {}).get("primary", {}).get("busy", [])
+                if not busy_slots:
+                    return f"The entire day ({target_date_str}) from 9:00 AM to 6:00 PM is free."
+                busy_text = [f"{b.get('start')} to {b.get('end')}" for b in busy_slots]
+                return f"On {target_date_str}, the calendar is BUSY during:\n" + "\n".join(busy_text)
+            return f"Available for booking on {target_date_str}."
+        except Exception as e:
+            return f"Available for booking on {target_date_str}."
+
+    @staticmethod
+    def book_appointment(client, date_str, time_str, customer_name):
+        try:
+            start_iso = f"{date_str}T{time_str}:00Z"
+            res = create_calendar_event(
+                client_obj=client,
+                summary=f"Meeting with {customer_name}",
+                description="Booked automatically via UwoConnect AI.",
+                start_iso=start_iso,
+                duration_minutes=30
+            )
+            return f"Successfully booked appointment on {date_str} at {time_str} for {customer_name}. Meet link: {res.get('meetLink', 'N/A')}"
+        except Exception as e:
+            return f"Error booking appointment: {str(e)}"

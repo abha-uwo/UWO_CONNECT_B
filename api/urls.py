@@ -17,7 +17,8 @@ from .views import (
     GoogleCalendarConnectView, GoogleCalendarCallbackView, GoogleCalendarStatusView, GoogleCalendarSyncView, GoogleCalendarCreateEventView, GoogleCalendarDisconnectView,
     GoogleSheetsConnectView, GoogleSheetsCallbackView, GoogleSheetsStatusView, GoogleSheetsSyncView, GoogleSheetsAppendRowView, GoogleSheetsDisconnectView,
     GoogleDocsConnectView, GoogleDocsCallbackView, GoogleDocsStatusView, GoogleDocsSyncView, GoogleDocsCreateDocView, GoogleDocsDisconnectView,
-    GoogleSlidesConnectView, GoogleSlidesCallbackView, GoogleSlidesStatusView, GoogleSlidesSyncView, GoogleSlidesCreatePresentationView, GoogleSlidesDisconnectView
+    GoogleSlidesConnectView, GoogleSlidesCallbackView, GoogleSlidesStatusView, GoogleSlidesSyncView, GoogleSlidesCreatePresentationView, GoogleSlidesDisconnectView,
+    PublicCalendarSlotsView, PublicCalendarBookView
 )
 
 router = DefaultRouter()
@@ -53,6 +54,8 @@ urlpatterns = [
     path('auth/google-client-id', GoogleClientIdView.as_view(), name='google-client-id'),
     path('auth/gmail/connect', GmailConnectView.as_view(), name='gmail-connect'),
     path('auth/gmail/callback', GmailCallbackView.as_view(), name='gmail-callback'),
+    path('auth/google-calendar/connect', GoogleCalendarConnectView.as_view(), name='google-calendar-connect'),
+    path('auth/google-calendar/callback', GoogleCalendarCallbackView.as_view(), name='google-calendar-callback'),
     path('auth/gmail/sync', GmailSyncView.as_view(), name='gmail-sync'),
     path('auth/firebase-login', FirebaseLoginView.as_view(), name='firebase-login'),
     path('auth/forgot-password/send-otp', ForgotPasswordSendOTPView.as_view(), name='forgot-password-send-otp'),
@@ -86,6 +89,7 @@ urlpatterns = [
     path('payments/verify-order', VerifyPaymentView.as_view(), name='payment-verify-order'),
     path('payments/history', PaymentHistoryView.as_view(), name='payment-history'),
     path('payments/webhook', RazorpayWebhookView.as_view(), name='payment-webhook'),
+<<<<<<< HEAD
     # OneDrive Integration
     path('onedrive/connect', OneDriveConnectView.as_view(), name='onedrive-connect'),
     path('onedrive/connect/', OneDriveConnectView.as_view()),
@@ -149,4 +153,8 @@ urlpatterns = [
     path('google-slides/create-presentation/', GoogleSlidesCreatePresentationView.as_view()),
     path('google-slides/disconnect', GoogleSlidesDisconnectView.as_view(), name='gslides-disconnect'),
     path('google-slides/disconnect/', GoogleSlidesDisconnectView.as_view()),
+    
+    # Public endpoints
+    path('public/calendar/<str:client_id>/slots', PublicCalendarSlotsView.as_view(), name='public-calendar-slots'),
+    path('public/calendar/<str:client_id>/book', PublicCalendarBookView.as_view(), name='public-calendar-book'),
 ]
