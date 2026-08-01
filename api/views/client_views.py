@@ -85,6 +85,78 @@ class ClientViewSet(viewsets.ModelViewSet):
             return Response({"error": result["error"]}, status=result["status_code"])
         return Response({"status": result["status"], "value": result["value"]})
 
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def update_whatsapp_profile_picture(self, request, pk=None):
+        client = self.get_object()
+        
+        # Verify ownership
+        if request.user.role != 'ADMIN' and request.user.client_id != client.id:
+            return Response({"error": "Unauthorized"}, status=403)
+
+        if not client.whatsapp_phone_number_id or not client.whatsapp_access_token:
+            return Response({"error": "WhatsApp not connected"}, status=400)
+
+        image_file = request.FILES.get('profile_picture')
+        if not image_file:
+            return Response({"error": "No image provided. Please send file in 'profile_picture' form field."}, status=400)
+
+        app_id = os.getenv('FACEBOOK_APP_ID')
+        if not app_id:
+            return Response({"error": "Server is missing FACEBOOK_APP_ID"}, status=500)
+
+        file_length = image_file.size
+        file_type = image_file.content_type
+
+        # 1. Create Resumable Upload Session
+        session_url = f"https://graph.facebook.com/{os.getenv('WHATSAPP_API_VERSION', 'v20.0')}/{app_id}/uploads?file_length={file_length}&file_type={file_type}"
+        headers = {
+            "Authorization": f"Bearer {client.whatsapp_access_token}"
+        }
+        
+        try:
+            res = requests.post(session_url, headers=headers)
+            res_data = res.json()
+            if 'id' not in res_data:
+                return Response({"error": "Failed to create upload session with Meta", "details": res_data}, status=400)
+                
+            upload_session_id = res_data['id']
+
+            # 2. Upload file binary data
+            upload_url = f"https://graph.facebook.com/{os.getenv('WHATSAPP_API_VERSION', 'v20.0')}/{upload_session_id}"
+            upload_headers = {
+                "Authorization": f"Bearer {client.whatsapp_access_token}",
+                "file_offset": "0"
+            }
+            
+            image_file.seek(0)
+            upload_res = requests.post(upload_url, headers=upload_headers, data=image_file.read())
+            upload_data = upload_res.json()
+            if 'h' not in upload_data:
+                return Response({"error": "Failed to upload file data to Meta", "details": upload_data}, status=400)
+                
+            file_handle = upload_data['h']
+
+            # 3. Update WhatsApp Business Profile
+            profile_url = f"https://graph.facebook.com/{os.getenv('WHATSAPP_API_VERSION', 'v20.0')}/{client.whatsapp_phone_number_id}/whatsapp_business_profile"
+            profile_payload = {
+                "messaging_product": "whatsapp",
+                "profile_picture_handle": file_handle
+            }
+            profile_headers = {
+                "Authorization": f"Bearer {client.whatsapp_access_token}",
+                "Content-Type": "application/json"
+            }
+            profile_res = requests.post(profile_url, headers=profile_headers, json=profile_payload)
+            profile_data = profile_res.json()
+
+            if profile_res.status_code == 200 and profile_data.get('success'):
+                return Response({"status": "success", "message": "Profile picture updated successfully on WhatsApp!"})
+            else:
+                return Response({"error": "Failed to update WhatsApp profile", "details": profile_data}, status=400)
+                
+        except Exception as e:
+            return Response({"error": f"An internal error occurred: {str(e)}"}, status=500)
+
 
 class ContactViewSet(viewsets.ModelViewSet):
     serializer_class = ContactSerializer
