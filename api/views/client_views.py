@@ -22,7 +22,9 @@ import json
 from ..services.ai_service import get_ai_response, get_platform_assistance, get_rag_response, get_embedding, chunk_text, find_relevant_chunks, get_ai_draft
 from rest_framework.permissions import BasePermission
 from .webhook_views import WhatsAppWebhookView, FacebookInstagramWebhookView
+import logging
 
+logger = logging.getLogger(__name__)
 def get_tenant_client(request):
     if not request.user or not request.user.is_authenticated:
         return None
