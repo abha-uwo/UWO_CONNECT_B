@@ -197,6 +197,48 @@ class WorkflowEngine:
                 session.save()
                 break
 
+            elif node_type in ['google_meet', 'calendar']:
+                data = current_node.get('data', {})
+                title = data.get('title', 'Scheduled Meeting')
+                duration = int(data.get('duration', 30))
+                attendee_email = getattr(contact, 'email', None) if contact else None
+
+                booking_res = None
+                try:
+                    from .google_calendar_service import create_calendar_event
+                    booking_res = create_calendar_event(
+                        client_obj=session.client,
+                        summary=f"{title} - {session.phone_number}",
+                        description=f"Meeting booked automatically via Chat Workflow for {session.phone_number}",
+                        duration_minutes=duration,
+                        attendee_email=attendee_email
+                    )
+                except Exception as _gerr:
+                    print(f"Error creating Google Meet event in workflow: {_gerr}")
+
+                if booking_res and booking_res.get('success'):
+                    meet_url = booking_res.get('meetLink') or booking_res.get('htmlLink', '')
+                    msg_body = f"📅 *Meeting Scheduled Successfully!*\n\n📹 *Google Meet Link*: {meet_url}\n⏱️ *Duration*: {duration} Mins\n⏰ *Calendar Reminder Set!*"
+                else:
+                    msg_body = f"📅 *Meeting Scheduled*: {title}\n⏱️ *Duration*: {duration} Mins"
+
+                messages_to_send.append({
+                    "type": "text",
+                    "body": msg_body
+                })
+
+                session.current_node_id = current_node_id
+                session.save()
+
+                next_edge = next((e for e in edges if e.get('source') == current_node_id), None)
+                if next_edge:
+                    current_node_id = next_edge.get('target')
+                    continue
+                else:
+                    session.is_active = False
+                    session.save()
+                    break
+
             elif node_type in ['plain', 'default', 'image', 'video', 'buttons']:
                 messages_to_send.append(WorkflowEngine._format_node_response(current_node))
                 

@@ -150,4 +150,3 @@ urlpatterns = [
     path('google-slides/disconnect', GoogleSlidesDisconnectView.as_view(), name='gslides-disconnect'),
     path('google-slides/disconnect/', GoogleSlidesDisconnectView.as_view()),
 ]
-

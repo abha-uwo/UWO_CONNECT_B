@@ -15,6 +15,7 @@ class Client(models.Model):
     ]
     business_name = models.CharField(max_length=255)
     phone_number = models.CharField(max_length=50, null=True, blank=True)
+    address = models.TextField(null=True, blank=True)
     automation_enabled = models.BooleanField(default=True)
     plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default='FREE')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='ACTIVE')

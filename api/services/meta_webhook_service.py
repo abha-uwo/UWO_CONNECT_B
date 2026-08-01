@@ -322,9 +322,32 @@ class MetaWebhookService:
                         MetaWebhookService.send_whatsapp_message(client, to_number, auto.response, phone_number_id, auto.buttons)
                         match_found = True
                         break
-            if match_found: break
+        incoming_lower = incoming_text.lower().strip()
+
+        # Check for Buy Now action
+        buy_keywords = ['buy now', '🛒 buy now', 'order now', 'buy product', 'purchase']
+        if any(kw in incoming_lower for kw in buy_keywords):
+            MetaWebhookService.handle_buy_now(client, to_number, 'WHATSAPP', phone_number_id)
+            return
+
+        # Check for Product Catalog queries
+        catalog_keywords = ['product', 'products', 'catalog', 'browse products', 'shop', 'items', 'store', 'samaan']
+        if any(kw in incoming_lower for kw in catalog_keywords):
+            MetaWebhookService.send_catalog_products(client, to_number, 'WHATSAPP', phone_number_id)
+            return
+
+        # Check for address / location queries
+        address_keywords = ['address', 'location', 'path', 'map', 'directions', 'dukaan', 'shop location', 'kaha par', 'kaha h', 'where are you located']
+        if client.address and any(kw in incoming_lower for kw in address_keywords):
+            import urllib.parse
+            encoded_addr = urllib.parse.quote(client.address)
+            maps_link = f"https://www.google.com/maps/dir/?api=1&destination={encoded_addr}"
+            loc_msg = f"📍 *{client.business_name} Address & Location*:\n\n🏢 *Address*: {client.address}\n\n🗺️ *Get Directions / Map Path*:\n{maps_link}"
+            MetaWebhookService.send_whatsapp_message(client, to_number, loc_msg, phone_number_id)
+            return
 
         if not match_found and client.ai_enabled:
+            ai_reply = None
             chunks = KnowledgeRepository.filter_chunks(client=client).exclude(embedding=[])
             if chunks.exists():
                 query_embedding = get_embedding(incoming_text)
@@ -387,7 +410,29 @@ class MetaWebhookService:
                         MetaWebhookService.send_fb_ig_message(client, platform, sender_id, auto.response, auto.buttons)
                         match_found = True
                         break
-            if match_found: break
+        incoming_lower = incoming_text.lower().strip()
+
+        # Check for Buy Now action
+        buy_keywords = ['buy now', '🛒 buy now', 'order now', 'buy product', 'purchase']
+        if any(kw in incoming_lower for kw in buy_keywords):
+            MetaWebhookService.handle_buy_now(client, sender_id, platform)
+            return
+
+        # Check for Product Catalog queries
+        catalog_keywords = ['product', 'products', 'catalog', 'browse products', 'shop', 'items', 'store', 'samaan']
+        if any(kw in incoming_lower for kw in catalog_keywords):
+            MetaWebhookService.send_catalog_products(client, sender_id, platform)
+            return
+
+        # Check for address / location queries
+        address_keywords = ['address', 'location', 'path', 'map', 'directions', 'dukaan', 'shop location', 'kaha par', 'kaha h', 'where are you located']
+        if client.address and any(kw in incoming_lower for kw in address_keywords):
+            import urllib.parse
+            encoded_addr = urllib.parse.quote(client.address)
+            maps_link = f"https://www.google.com/maps/dir/?api=1&destination={encoded_addr}"
+            loc_msg = f"📍 {client.business_name} Address & Location:\n\n🏢 Address: {client.address}\n\n🗺️ Get Directions / Map Path:\n{maps_link}"
+            MetaWebhookService.send_fb_ig_message(client, platform, sender_id, loc_msg)
+            return
 
         if not match_found and client.ai_enabled:
             ai_reply = None
@@ -563,3 +608,71 @@ class MetaWebhookService:
             )
         except Exception as e:
             print(f"Failed to send {platform} message:", str(e))
+
+    @staticmethod
+    def send_catalog_products(client, recipient_id, platform='WHATSAPP', phone_number_id=None):
+        from ..repositories.product_repository import ProductRepository
+        products = ProductRepository.filter_products(client=client, in_stock=True)[:5]
+        if not products:
+            msg = "🛍️ Our product catalog is currently empty. Please check back soon!"
+            if platform == 'WHATSAPP':
+                MetaWebhookService.send_whatsapp_message(client, recipient_id, msg, phone_number_id)
+            else:
+                MetaWebhookService.send_fb_ig_message(client, platform, recipient_id, msg)
+            return
+
+        msg_body = f"🛍️ *{client.business_name} Product Catalog*:\n\n"
+        for p in products:
+            price_str = f"${p.price}" if p.price else "Contact for Price"
+            msg_body += f"📦 *{p.name}* ({price_str})\n"
+            if p.description:
+                msg_body += f"  _{p.description}_\n"
+            msg_body += "\n"
+
+        msg_body += "👉 Reply with *'Buy'* or click *🛒 Buy Now* to place an order!"
+        buttons = ["🛒 Buy Now", "💬 Talk to Support"]
+
+        if platform == 'WHATSAPP':
+            MetaWebhookService.send_whatsapp_message(client, recipient_id, msg_body, phone_number_id, buttons)
+        else:
+            MetaWebhookService.send_fb_ig_message(client, platform, recipient_id, msg_body, buttons)
+
+    @staticmethod
+    def handle_buy_now(client, recipient_id, platform='WHATSAPP', phone_number_id=None):
+        from ..repositories.product_repository import ProductRepository
+        from ..repositories.contact_repository import ContactRepository
+        from ..repositories.order_repository import OrderRepository
+
+        products = ProductRepository.filter_products(client=client, in_stock=True)
+        if not products:
+            msg = "No products available for order right now."
+            if platform == 'WHATSAPP':
+                MetaWebhookService.send_whatsapp_message(client, recipient_id, msg, phone_number_id)
+            else:
+                MetaWebhookService.send_fb_ig_message(client, platform, recipient_id, msg)
+            return
+
+        product = products[0]
+        contact = ContactRepository.filter_contacts(client=client, platform_id=recipient_id).first()
+        if not contact:
+            contact = ContactRepository.create_contact(client=client, platform_id=recipient_id, name=f"Customer ({recipient_id})")
+
+        order = OrderRepository.create_order(
+            client=client,
+            contact=contact,
+            items=[{
+                "product_id": str(product.id),
+                "name": product.name,
+                "price": float(product.price or 0),
+                "quantity": 1
+            }],
+            total_amount=product.price or 0,
+            payment_status='PENDING'
+        )
+
+        msg_body = f"✅ *Order Created Successfully!*\n\n📋 *Order ID*: #{order.id}\n📦 *Item*: {product.name}\n💰 *Total Amount*: ${product.price}\n💳 *Status*: PENDING\n\nThank you for shopping with {client.business_name}! Our team will contact you shortly to complete payment & delivery."
+        
+        if platform == 'WHATSAPP':
+            MetaWebhookService.send_whatsapp_message(client, recipient_id, msg_body, phone_number_id)
+        else:
+            MetaWebhookService.send_fb_ig_message(client, platform, recipient_id, msg_body)

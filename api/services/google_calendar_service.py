@@ -126,12 +126,27 @@ def create_calendar_event(client_obj, summary, description="", start_iso=None, d
 
     end_dt = start_dt + timedelta(minutes=duration_minutes)
 
+    import uuid
     event_body = {
         "summary": summary,
         "description": description,
         "location": location,
         "start": {"dateTime": start_dt.isoformat()},
         "end": {"dateTime": end_dt.isoformat()},
+        "conferenceData": {
+            "createRequest": {
+                "requestId": str(uuid.uuid4()),
+                "conferenceSolutionKey": {"type": "hangoutsMeet"}
+            }
+        },
+        "reminders": {
+            "useDefault": False,
+            "overrides": [
+                {"method": "email", "minutes": 1440},  # 24 hours before email
+                {"method": "popup", "minutes": 30},    # 30 mins before notification
+                {"method": "popup", "minutes": 10},    # 10 mins before notification
+            ]
+        }
     }
 
     if attendee_email:
@@ -143,16 +158,18 @@ def create_calendar_event(client_obj, summary, description="", start_iso=None, d
         "Content-Type": "application/json",
     }
 
-    resp = requests.post(url, json=event_body, headers=headers, timeout=20)
+    resp = requests.post(url, json=event_body, headers=headers, params={"conferenceDataVersion": 1}, timeout=20)
     if resp.status_code not in (200, 201):
         logger.error("Failed creating calendar event: %s", resp.text)
         raise ValueError(f"Failed to create Google Calendar event: {resp.text}")
 
     data = resp.json()
+    meet_link = data.get("hangoutLink") or (data.get("conferenceData", {}).get("entryPoints", [{}])[0].get("uri") if data.get("conferenceData") else None)
     return {
         "success": True,
         "event_id": data.get("id"),
         "htmlLink": data.get("htmlLink"),
+        "meetLink": meet_link,
         "summary": data.get("summary"),
         "start": data.get("start", {}).get("dateTime"),
         "end": data.get("end", {}).get("dateTime"),
