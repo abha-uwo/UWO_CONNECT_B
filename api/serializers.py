@@ -25,6 +25,11 @@ class ClientSerializer(serializers.ModelSerializer):
     total_contacts = serializers.SerializerMethodField()
     total_workflows = serializers.SerializerMethodField()
     total_bots = serializers.SerializerMethodField()
+    onedrive_config = serializers.SerializerMethodField()
+    google_calendar_config = serializers.SerializerMethodField()
+    google_sheets_config = serializers.SerializerMethodField()
+    google_docs_config = serializers.SerializerMethodField()
+    google_slides_config = serializers.SerializerMethodField()
 
     class Meta:
         model = Client
@@ -44,6 +49,60 @@ class ClientSerializer(serializers.ModelSerializer):
     def get_total_bots(self, obj):
         from .models import Automation
         return AutomationRepository.filter_automations(client=obj).count()
+
+    def get_onedrive_config(self, obj):
+        """Return OneDrive config without sensitive OAuth tokens."""
+        config = obj.onedrive_config or {}
+        safe_keys = {
+            'account_name', 'account_email', 'drive_id', 'drive_name',
+            'drive_type', 'storage_total', 'storage_used', 'web_url',
+            'last_sync_time', 'connected_at', 'synced_count',
+            'pending_count', 'failed_count',
+        }
+        return {k: v for k, v in config.items() if k in safe_keys}
+
+    def get_google_calendar_config(self, obj):
+        """Return Google Calendar config without sensitive OAuth tokens."""
+        config = obj.google_calendar_config or {}
+        safe_keys = {
+            'account_email', 'primary_calendar_id', 'timezone',
+            'auto_sync_whatsapp', 'auto_sync_crm', 'default_duration',
+            'last_sync_time', 'connected_at', 'events_count',
+        }
+        return {k: v for k, v in config.items() if k in safe_keys}
+
+    def get_google_sheets_config(self, obj):
+        """Return Google Sheets config without sensitive OAuth tokens."""
+        config = obj.google_sheets_config or {}
+        safe_keys = {
+            'account_email', 'spreadsheet_id', 'spreadsheet_name',
+            'sheet_name', 'spreadsheet_url', 'auto_export_leads',
+            'auto_export_orders', 'auto_export_crm', 'rows_synced',
+            'last_sync_time', 'connected_at',
+        }
+        return {k: v for k, v in config.items() if k in safe_keys}
+
+    def get_google_docs_config(self, obj):
+        """Return Google Docs config without sensitive OAuth tokens."""
+        config = obj.google_docs_config or {}
+        safe_keys = {
+            'account_email', 'default_doc_id', 'default_doc_name',
+            'default_doc_url', 'auto_generate_summaries',
+            'auto_generate_receipts', 'docs_created_count',
+            'last_sync_time', 'connected_at', 'recent_docs',
+        }
+        return {k: v for k, v in config.items() if k in safe_keys}
+
+    def get_google_slides_config(self, obj):
+        """Return Google Slides config without sensitive OAuth tokens."""
+        config = obj.google_slides_config or {}
+        safe_keys = {
+            'account_email', 'default_presentation_id', 'default_presentation_name',
+            'default_presentation_url', 'auto_generate_pitch_decks',
+            'auto_generate_catalog_decks', 'presentations_created_count',
+            'last_sync_time', 'connected_at', 'recent_presentations',
+        }
+        return {k: v for k, v in config.items() if k in safe_keys}
 
 
 class UserSerializer(serializers.ModelSerializer):

@@ -15,6 +15,7 @@ class Client(models.Model):
     ]
     business_name = models.CharField(max_length=255)
     phone_number = models.CharField(max_length=50, null=True, blank=True)
+    address = models.TextField(null=True, blank=True)
     automation_enabled = models.BooleanField(default=True)
     plan = models.CharField(max_length=20, choices=PLAN_CHOICES, default='FREE')
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='ACTIVE')
@@ -23,7 +24,11 @@ class Client(models.Model):
     facebook_enabled = models.BooleanField(default=False)
     instagram_enabled = models.BooleanField(default=False)
     gmail_enabled = models.BooleanField(default=False)
+    onedrive_enabled = models.BooleanField(default=False)
     google_calendar_enabled = models.BooleanField(default=False)
+    google_sheets_enabled = models.BooleanField(default=False)
+    google_docs_enabled = models.BooleanField(default=False)
+    google_slides_enabled = models.BooleanField(default=False)
     
     # WhatsApp Config
     whatsapp_access_token = models.TextField(null=True, blank=True)
@@ -45,7 +50,11 @@ class Client(models.Model):
     instagram_config = models.JSONField(default=dict, blank=True)
     whatsapp_config = models.JSONField(default=dict, blank=True)
     gmail_config = models.JSONField(default=dict, blank=True)
+    onedrive_config = models.JSONField(default=dict, blank=True)
     google_calendar_config = models.JSONField(default=dict, blank=True)
+    google_sheets_config = models.JSONField(default=dict, blank=True)
+    google_docs_config = models.JSONField(default=dict, blank=True)
+    google_slides_config = models.JSONField(default=dict, blank=True)
     settings = models.JSONField(default=dict, blank=True)
     
     # Enterprise Features

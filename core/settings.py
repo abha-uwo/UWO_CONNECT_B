@@ -30,26 +30,26 @@ import json
 firebase_sa_json = os.getenv('FIREBASE_SERVICE_ACCOUNT_JSON')
 firebase_sa_path = os.getenv('FIREBASE_SERVICE_ACCOUNT_PATH', '')
 
-if firebase_sa_json:
-    cred = credentials.Certificate(json.loads(firebase_sa_json))
-    firebase_admin.initialize_app(cred)
-elif firebase_sa_path:
-    if not os.path.isabs(firebase_sa_path):
-        firebase_sa_path = os.path.join(BASE_DIR, firebase_sa_path)
-    if os.path.exists(firebase_sa_path):
-        cred = credentials.Certificate(firebase_sa_path)
-        firebase_admin.initialize_app(cred)
-    else:
-        print(f"[WARNING] Firebase service account file not found: {firebase_sa_path}. Initializing default Firebase app.")
-        firebase_admin.initialize_app()
-else:
-    firebase_admin.initialize_app()
+if not firebase_admin._apps:
+    try:
+        if firebase_sa_json:
+            cred = credentials.Certificate(json.loads(firebase_sa_json))
+            firebase_admin.initialize_app(cred)
+        elif firebase_sa_path:
+            if not os.path.isabs(firebase_sa_path):
+                firebase_sa_path = os.path.join(BASE_DIR, firebase_sa_path)
+            if os.path.exists(firebase_sa_path):
+                cred = credentials.Certificate(firebase_sa_path)
+                firebase_admin.initialize_app(cred)
+            else:
+                firebase_admin.initialize_app()
+        else:
+            firebase_admin.initialize_app()
+    except Exception as e:
+        print(f"[WARNING] Firebase Admin init warning: {e}")
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY')
-if not SECRET_KEY:
-    print('[ERROR] SECRET_KEY not set. Exiting.')
-    sys.exit(1)
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-gUXYFgMLdUxheQmX8fqOUW8kvpv2zb_3_kYLw3sD7vz7qQ-Q_BZ8ILoRKcltpgLT2-U')
 
 DEBUG = os.getenv('DEBUG', 'False') == 'True'
 ALLOWED_HOSTS = ['*']  # Azure handles security at the network level
@@ -117,7 +117,7 @@ MIGRATION_MODULES = {
     'sessions': 'mongo_migrations.sessions',
 }
 
-CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     'https://uwoconnect.aisa24.com',
@@ -166,11 +166,12 @@ CHANNEL_LAYERS = {
 }
 
 # Database — MongoDB Atlas via django-mongodb-backend
+DEFAULT_MONGO_URI = 'mongodb+srv://admin_db_user:admin%40123@cluster0.drmnlav.mongodb.net/?appName=Cluster0'
 DATABASES = {
     'default': {
         'ENGINE': 'django_mongodb_backend',
-        'NAME': os.getenv('MONGODB_DB_NAME', 'aisaconnect_db'),
-        'HOST': os.getenv('MONGODB_URI'),
+        'NAME': os.getenv('MONGODB_DB_NAME', 'aisaconnect_db_v5'),
+        'HOST': os.getenv('MONGODB_URI', DEFAULT_MONGO_URI),
     }
 }
 

@@ -70,9 +70,19 @@ class MetaWebhookService:
 
                             if msg_type == 'text':
                                 body = (msg.get('text') or {}).get('body', '')
+                            elif msg_type == 'image':
+                                img_data = msg.get('image') or {}
+                                caption = img_data.get('caption', '')
+                                body = f"📷 {caption}" if caption else "📷 [Photo]"
+                            elif msg_type == 'document':
+                                doc_data = msg.get('document') or {}
+                                filename = doc_data.get('filename') or 'Document'
+                                caption = doc_data.get('caption', '')
+                                body = f"📄 {filename}" + (f" - {caption}" if caption else "")
                             elif msg_type == 'audio' or msg_type == 'voice':
                                 audio_data = msg.get('audio') or msg.get('voice') or {}
                                 audio_id = audio_data.get('id')
+                                body = "🎵 [Voice Note / Audio]"
                                 if audio_id and client.whatsapp_access_token:
                                     try:
                                         media_url_endpoint = f"https://graph.facebook.com/v18.0/{audio_id}"
@@ -83,10 +93,20 @@ class MetaWebhookService:
                                             from ..utils.whisper_utils import transcribe_audio_with_whisper
                                             transcribed_text = transcribe_audio_with_whisper(media_url, client.whatsapp_access_token)
                                             if transcribed_text:
-                                                body = transcribed_text
+                                                body = f"🎵 {transcribed_text}"
                                                 print(f"Transcribed WhatsApp audio successfully: {body}")
                                     except Exception as ex:
                                         print(f"Failed parsing incoming voice note: {str(ex)}")
+                            elif msg_type == 'video':
+                                vid_data = msg.get('video') or {}
+                                caption = vid_data.get('caption', '')
+                                body = f"🎥 {caption}" if caption else "🎥 [Video]"
+                            elif msg_type == 'location':
+                                loc = msg.get('location') or {}
+                                loc_name = loc.get('name') or loc.get('address') or f"{loc.get('latitude')}, {loc.get('longitude')}"
+                                body = f"📍 [Location: {loc_name}]"
+                            elif msg_type == 'sticker':
+                                body = "🎨 [Sticker]"
                             elif msg_type == 'button':
                                 body = (msg.get('button') or {}).get('text', '')
                             elif msg_type == 'interactive':
@@ -95,6 +115,8 @@ class MetaWebhookService:
                                     body = (msg.get('interactive') or {}).get('button_reply', {}).get('title', '')
                                 elif i_type == 'list_reply':
                                     body = (msg.get('interactive') or {}).get('list_reply', {}).get('title', '')
+                            elif not body:
+                                body = f"📎 [{msg_type.capitalize()}]"
                             
                             contact, _ = ContactRepository.get_contact_or_create(
                                 client=client,
@@ -117,6 +139,27 @@ class MetaWebhookService:
                                 status='RECEIVED',
                                 metadata=msg
                             )
+
+                            # OneDrive: sync media files in background
+                            try:
+                                from ..services.onedrive_sync_service import sync_whatsapp_media_to_onedrive
+                                sync_whatsapp_media_to_onedrive(client, msg)
+                            except Exception as _ode:
+                                logger.warning("OneDrive WA hook error: %s", _ode)
+
+                            # Google Sheets: auto-export incoming WhatsApp lead/message in background
+                            if client.google_sheets_enabled:
+                                try:
+                                    import threading
+                                    from ..services.google_sheets_service import append_lead_row
+                                    contact_name = contact.name or f"WhatsApp ({from_number})"
+                                    threading.Thread(
+                                        target=append_lead_row,
+                                        args=(client, "WHATSAPP", contact_name, from_number, "INCOMING_MESSAGE", body, "NEW"),
+                                        daemon=True
+                                    ).start()
+                                except Exception as _gse:
+                                    logger.warning("Google Sheets WA hook error: %s", _gse)
 
                             if body:
                                 if not contact.bot_paused:
@@ -178,11 +221,33 @@ class MetaWebhookService:
                             body = msg_data.get('quick_reply', {}).get('payload', '')
                         else:
                             body = msg_data.get('text', '')
+                        
+                        # Handle media attachments (image, audio, video, file)
+                        attachments = msg_data.get('attachments', [])
+                        if attachments:
+                            att_parts = []
+                            for att in attachments:
+                                att_type = att.get('type', 'file')
+                                title = (att.get('payload') or {}).get('title', '')
+                                if att_type == 'image':
+                                    att_parts.append("📷 [Photo]")
+                                elif att_type in ('file', 'doc'):
+                                    att_parts.append(f"📄 [{title or 'Document'}]")
+                                elif att_type == 'audio':
+                                    att_parts.append("🎵 [Audio]")
+                                elif att_type == 'video':
+                                    att_parts.append("🎥 [Video]")
+                                else:
+                                    att_parts.append(f"📎 [{att_type.capitalize()}]")
+                            
+                            media_summary = " ".join(att_parts)
+                            body = f"{body} {media_summary}".strip() if body else media_summary
+
                     elif 'postback' in event:
                         body = event.get('postback', {}).get('payload', '') or event.get('postback', {}).get('title', '')
                     
                     if not body:
-                        continue
+                        body = "📎 [Attachment / Media]"
                     
                     contact, _ = ContactRepository.get_contact_or_create(
                         client=client,
@@ -204,6 +269,14 @@ class MetaWebhookService:
                         status='RECEIVED',
                         metadata=event
                     )
+
+                    # OneDrive: sync attachments in background
+                    try:
+                        from ..services.onedrive_sync_service import sync_fb_ig_media_to_onedrive
+                        msg_data = event.get('message', {})
+                        sync_fb_ig_media_to_onedrive(client, msg_data, platform=platform)
+                    except Exception as _ode:
+                        logger.warning("OneDrive FB/IG hook error: %s", _ode)
 
                     if body:
                         if not contact.bot_paused:
@@ -249,9 +322,32 @@ class MetaWebhookService:
                         MetaWebhookService.send_whatsapp_message(client, to_number, auto.response, phone_number_id, auto.buttons)
                         match_found = True
                         break
-            if match_found: break
+        incoming_lower = incoming_text.lower().strip()
+
+        # Check for Buy Now action
+        buy_keywords = ['buy now', '🛒 buy now', 'order now', 'buy product', 'purchase']
+        if any(kw in incoming_lower for kw in buy_keywords):
+            MetaWebhookService.handle_buy_now(client, to_number, 'WHATSAPP', phone_number_id)
+            return
+
+        # Check for Product Catalog queries
+        catalog_keywords = ['product', 'products', 'catalog', 'browse products', 'shop', 'items', 'store', 'samaan']
+        if any(kw in incoming_lower for kw in catalog_keywords):
+            MetaWebhookService.send_catalog_products(client, to_number, 'WHATSAPP', phone_number_id)
+            return
+
+        # Check for address / location queries
+        address_keywords = ['address', 'location', 'path', 'map', 'directions', 'dukaan', 'shop location', 'kaha par', 'kaha h', 'where are you located']
+        if client.address and any(kw in incoming_lower for kw in address_keywords):
+            import urllib.parse
+            encoded_addr = urllib.parse.quote(client.address)
+            maps_link = f"https://www.google.com/maps/dir/?api=1&destination={encoded_addr}"
+            loc_msg = f"📍 *{client.business_name} Address & Location*:\n\n🏢 *Address*: {client.address}\n\n🗺️ *Get Directions / Map Path*:\n{maps_link}"
+            MetaWebhookService.send_whatsapp_message(client, to_number, loc_msg, phone_number_id)
+            return
 
         if not match_found and client.ai_enabled:
+            ai_reply = None
             chunks = KnowledgeRepository.filter_chunks(client=client).exclude(embedding=[])
             if chunks.exists():
                 query_embedding = get_embedding(incoming_text)
@@ -314,7 +410,29 @@ class MetaWebhookService:
                         MetaWebhookService.send_fb_ig_message(client, platform, sender_id, auto.response, auto.buttons)
                         match_found = True
                         break
-            if match_found: break
+        incoming_lower = incoming_text.lower().strip()
+
+        # Check for Buy Now action
+        buy_keywords = ['buy now', '🛒 buy now', 'order now', 'buy product', 'purchase']
+        if any(kw in incoming_lower for kw in buy_keywords):
+            MetaWebhookService.handle_buy_now(client, sender_id, platform)
+            return
+
+        # Check for Product Catalog queries
+        catalog_keywords = ['product', 'products', 'catalog', 'browse products', 'shop', 'items', 'store', 'samaan']
+        if any(kw in incoming_lower for kw in catalog_keywords):
+            MetaWebhookService.send_catalog_products(client, sender_id, platform)
+            return
+
+        # Check for address / location queries
+        address_keywords = ['address', 'location', 'path', 'map', 'directions', 'dukaan', 'shop location', 'kaha par', 'kaha h', 'where are you located']
+        if client.address and any(kw in incoming_lower for kw in address_keywords):
+            import urllib.parse
+            encoded_addr = urllib.parse.quote(client.address)
+            maps_link = f"https://www.google.com/maps/dir/?api=1&destination={encoded_addr}"
+            loc_msg = f"📍 {client.business_name} Address & Location:\n\n🏢 Address: {client.address}\n\n🗺️ Get Directions / Map Path:\n{maps_link}"
+            MetaWebhookService.send_fb_ig_message(client, platform, sender_id, loc_msg)
+            return
 
         if not match_found and client.ai_enabled:
             ai_reply = None
@@ -498,3 +616,71 @@ class MetaWebhookService:
             )
         except Exception as e:
             print(f"Failed to send {platform} message:", str(e))
+
+    @staticmethod
+    def send_catalog_products(client, recipient_id, platform='WHATSAPP', phone_number_id=None):
+        from ..repositories.product_repository import ProductRepository
+        products = ProductRepository.filter_products(client=client, in_stock=True)[:5]
+        if not products:
+            msg = "🛍️ Our product catalog is currently empty. Please check back soon!"
+            if platform == 'WHATSAPP':
+                MetaWebhookService.send_whatsapp_message(client, recipient_id, msg, phone_number_id)
+            else:
+                MetaWebhookService.send_fb_ig_message(client, platform, recipient_id, msg)
+            return
+
+        msg_body = f"🛍️ *{client.business_name} Product Catalog*:\n\n"
+        for p in products:
+            price_str = f"${p.price}" if p.price else "Contact for Price"
+            msg_body += f"📦 *{p.name}* ({price_str})\n"
+            if p.description:
+                msg_body += f"  _{p.description}_\n"
+            msg_body += "\n"
+
+        msg_body += "👉 Reply with *'Buy'* or click *🛒 Buy Now* to place an order!"
+        buttons = ["🛒 Buy Now", "💬 Talk to Support"]
+
+        if platform == 'WHATSAPP':
+            MetaWebhookService.send_whatsapp_message(client, recipient_id, msg_body, phone_number_id, buttons)
+        else:
+            MetaWebhookService.send_fb_ig_message(client, platform, recipient_id, msg_body, buttons)
+
+    @staticmethod
+    def handle_buy_now(client, recipient_id, platform='WHATSAPP', phone_number_id=None):
+        from ..repositories.product_repository import ProductRepository
+        from ..repositories.contact_repository import ContactRepository
+        from ..repositories.order_repository import OrderRepository
+
+        products = ProductRepository.filter_products(client=client, in_stock=True)
+        if not products:
+            msg = "No products available for order right now."
+            if platform == 'WHATSAPP':
+                MetaWebhookService.send_whatsapp_message(client, recipient_id, msg, phone_number_id)
+            else:
+                MetaWebhookService.send_fb_ig_message(client, platform, recipient_id, msg)
+            return
+
+        product = products[0]
+        contact = ContactRepository.filter_contacts(client=client, platform_id=recipient_id).first()
+        if not contact:
+            contact = ContactRepository.create_contact(client=client, platform_id=recipient_id, name=f"Customer ({recipient_id})")
+
+        order = OrderRepository.create_order(
+            client=client,
+            contact=contact,
+            items=[{
+                "product_id": str(product.id),
+                "name": product.name,
+                "price": float(product.price or 0),
+                "quantity": 1
+            }],
+            total_amount=product.price or 0,
+            payment_status='PENDING'
+        )
+
+        msg_body = f"✅ *Order Created Successfully!*\n\n📋 *Order ID*: #{order.id}\n📦 *Item*: {product.name}\n💰 *Total Amount*: ${product.price}\n💳 *Status*: PENDING\n\nThank you for shopping with {client.business_name}! Our team will contact you shortly to complete payment & delivery."
+        
+        if platform == 'WHATSAPP':
+            MetaWebhookService.send_whatsapp_message(client, recipient_id, msg_body, phone_number_id)
+        else:
+            MetaWebhookService.send_fb_ig_message(client, platform, recipient_id, msg_body)
