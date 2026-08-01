@@ -12,7 +12,9 @@ from .views import (
     WhatsAppEmbeddedSignupView, GmailConnectView, GmailCallbackView, GmailSyncView,
     InstagramEmbeddedSignupView, FacebookEmbeddedSignupView, InstagramOAuthCallbackView,
     ProjectViewSet, TaskViewSet, WorkReportView, WorkApprovalView, TeamChannelView,
-    TeamChatMessageView, TeamAnalyticsView, TeamAICopilotView, AttendanceViewSet, LeaveRequestViewSet
+    TeamChatMessageView, TeamAnalyticsView, TeamAICopilotView, AttendanceViewSet, LeaveRequestViewSet,
+    GoogleCalendarConnectView, GoogleCalendarCallbackView,
+    PublicCalendarSlotsView, PublicCalendarBookView
 )
 
 router = DefaultRouter()
@@ -48,6 +50,8 @@ urlpatterns = [
     path('auth/google-client-id', GoogleClientIdView.as_view(), name='google-client-id'),
     path('auth/gmail/connect', GmailConnectView.as_view(), name='gmail-connect'),
     path('auth/gmail/callback', GmailCallbackView.as_view(), name='gmail-callback'),
+    path('auth/google-calendar/connect', GoogleCalendarConnectView.as_view(), name='google-calendar-connect'),
+    path('auth/google-calendar/callback', GoogleCalendarCallbackView.as_view(), name='google-calendar-callback'),
     path('auth/gmail/sync', GmailSyncView.as_view(), name='gmail-sync'),
     path('auth/firebase-login', FirebaseLoginView.as_view(), name='firebase-login'),
     path('auth/forgot-password/send-otp', ForgotPasswordSendOTPView.as_view(), name='forgot-password-send-otp'),
@@ -79,5 +83,8 @@ urlpatterns = [
     path('payments/verify-order', VerifyPaymentView.as_view(), name='payment-verify-order'),
     path('payments/history', PaymentHistoryView.as_view(), name='payment-history'),
     path('payments/webhook', RazorpayWebhookView.as_view(), name='payment-webhook'),
+    
+    # Public endpoints
+    path('public/calendar/<str:client_id>/slots', PublicCalendarSlotsView.as_view(), name='public-calendar-slots'),
+    path('public/calendar/<str:client_id>/book', PublicCalendarBookView.as_view(), name='public-calendar-book'),
 ]
-

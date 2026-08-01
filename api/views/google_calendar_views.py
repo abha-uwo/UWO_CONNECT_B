@@ -11,9 +11,11 @@ from api.models import Client
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 os.environ['OAUTHLIB_RELAX_TOKEN_SCOPE'] = '1'
 
-SCOPES = ['https://www.googleapis.com/auth/gmail.modify']
+# We request the full Calendar scope to read and write events
+SCOPES = ['https://www.googleapis.com/auth/calendar']
 
 def get_client_config():
+    # We will reuse the GMAIL credentials since they are for the same Google Cloud Project
     return {
         "web": {
             "client_id": os.environ.get("GMAIL_CLIENT_ID", ""),
@@ -23,7 +25,7 @@ def get_client_config():
         }
     }
 
-class GmailConnectView(APIView):
+class GoogleCalendarConnectView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -33,14 +35,14 @@ class GmailConnectView(APIView):
             
         client_config = get_client_config()
         if not client_config['web']['client_id'] or not client_config['web']['client_secret']:
-            return Response({"error": "Gmail OAuth credentials not configured on backend."}, status=500)
+            return Response({"error": "Google API credentials not configured on backend."}, status=500)
         
         flow = google_auth_oauthlib.flow.Flow.from_client_config(
             client_config,
             scopes=SCOPES
         )
         
-        redirect_uri = os.environ.get("GMAIL_REDIRECT_URI", "http://localhost:8080/api/auth/gmail/callback")
+        redirect_uri = os.environ.get("GOOGLE_CALENDAR_REDIRECT_URI", "http://localhost:8080/api/auth/google-calendar/callback")
         flow.redirect_uri = redirect_uri
         
         authorization_url, state = flow.authorization_url(
@@ -50,14 +52,14 @@ class GmailConnectView(APIView):
         )
         
         # Save mapping from state to client_id in cache for 1 hour
-        cache.set(f'gmail_state_{state}', client.id, timeout=3600)
+        cache.set(f'calendar_state_{state}', client.id, timeout=3600)
         # Save the PKCE code_verifier
         if hasattr(flow, 'code_verifier'):
-            cache.set(f'gmail_verifier_{state}', flow.code_verifier, timeout=3600)
+            cache.set(f'calendar_verifier_{state}', flow.code_verifier, timeout=3600)
         
         return Response({"url": authorization_url})
 
-class GmailCallbackView(APIView):
+class GoogleCalendarCallbackView(APIView):
     # This endpoint is called by Google, so no auth classes
     permission_classes = []
     authentication_classes = []
@@ -69,16 +71,16 @@ class GmailCallbackView(APIView):
         frontend_url = os.environ.get('FRONTEND_URL', 'http://localhost:3000')
         
         if error:
-            return HttpResponseRedirect(f"{frontend_url}/client/channels?gmail_error={error}")
+            return HttpResponseRedirect(f"{frontend_url}/client/channels?google_calendar_error={error}")
             
-        client_id = cache.get(f'gmail_state_{state}')
+        client_id = cache.get(f'calendar_state_{state}')
         if not client_id:
-            return HttpResponseRedirect(f"{frontend_url}/client/channels?gmail_error=invalid_state")
+            return HttpResponseRedirect(f"{frontend_url}/client/channels?google_calendar_error=invalid_state")
             
         try:
             client = Client.objects.get(id=client_id)
         except Client.DoesNotExist:
-            return HttpResponseRedirect(f"{frontend_url}/client/channels?gmail_error=client_not_found")
+            return HttpResponseRedirect(f"{frontend_url}/client/channels?google_calendar_error=client_not_found")
             
         client_config = get_client_config()
         flow = google_auth_oauthlib.flow.Flow.from_client_config(
@@ -86,7 +88,7 @@ class GmailCallbackView(APIView):
             scopes=SCOPES,
             state=state
         )
-        flow.redirect_uri = os.environ.get("GMAIL_REDIRECT_URI", "http://localhost:8080/api/auth/gmail/callback")
+        flow.redirect_uri = os.environ.get("GOOGLE_CALENDAR_REDIRECT_URI", "http://localhost:8080/api/auth/google-calendar/callback")
         
         authorization_response = request.build_absolute_uri()
         # Fix http to https if behind a proxy
@@ -94,48 +96,28 @@ class GmailCallbackView(APIView):
              authorization_response = authorization_response.replace('http:', 'https:')
              
         # Add the code_verifier back to the flow for PKCE
-        code_verifier = cache.get(f'gmail_verifier_{state}')
+        code_verifier = cache.get(f'calendar_verifier_{state}')
         if code_verifier:
             flow.code_verifier = code_verifier
              
         try:
             flow.fetch_token(authorization_response=authorization_response)
-        except Exception as e:
-            return HttpResponseRedirect(f"{frontend_url}/client/channels?gmail_error={str(e)}")
+            credentials = flow.credentials
             
-        credentials = flow.credentials
-        
-        # Get user's email address using the token to store it
-        from googleapiclient.discovery import build
-        service = build('gmail', 'v1', credentials=credentials)
-        profile = service.users().getProfile(userId='me').execute()
-        email_address = profile.get('emailAddress', '')
-        
-        client.gmail_enabled = True
-        client.gmail_config = {
-            'email_address': email_address,
-            'token': credentials.token,
-            'refresh_token': credentials.refresh_token,
-            'token_uri': credentials.token_uri,
-            'client_id': credentials.client_id,
-            'client_secret': credentials.client_secret,
-            'scopes': credentials.scopes
-        }
-        client.save()
-        
-        return HttpResponseRedirect(f"{frontend_url}/client/channels?gmail_connected=true")
-
-class GmailSyncView(APIView):
-    permission_classes = [IsAuthenticated]
-    
-    def post(self, request):
-        client = request.user.client
-        if not client or not client.gmail_enabled:
-            return Response({"error": "Gmail is not connected."}, status=400)
+            # Save the tokens in the client model
+            client.google_calendar_enabled = True
+            client.google_calendar_config = {
+                'token': credentials.token,
+                'refresh_token': credentials.refresh_token,
+                'token_uri': credentials.token_uri,
+                'client_id': credentials.client_id,
+                'client_secret': credentials.client_secret,
+                'scopes': credentials.scopes
+            }
+            client.save()
             
-        try:
-            from api.services.gmail_service import sync_incoming_gmails
-            count = sync_incoming_gmails(client)
-            return Response({"success": True, "synced_count": count})
+            return HttpResponseRedirect(f"{frontend_url}/client/channels?google_calendar_connected=true")
+            
         except Exception as e:
-            return Response({"error": str(e)}, status=500)
+            print(f"Error fetching Google Calendar token: {str(e)}")
+            return HttpResponseRedirect(f"{frontend_url}/client/channels?google_calendar_error=token_fetch_failed: {str(e)}")

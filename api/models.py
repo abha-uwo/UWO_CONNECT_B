@@ -23,6 +23,7 @@ class Client(models.Model):
     facebook_enabled = models.BooleanField(default=False)
     instagram_enabled = models.BooleanField(default=False)
     gmail_enabled = models.BooleanField(default=False)
+    google_calendar_enabled = models.BooleanField(default=False)
     
     # WhatsApp Config
     whatsapp_access_token = models.TextField(null=True, blank=True)
@@ -44,6 +45,7 @@ class Client(models.Model):
     instagram_config = models.JSONField(default=dict, blank=True)
     whatsapp_config = models.JSONField(default=dict, blank=True)
     gmail_config = models.JSONField(default=dict, blank=True)
+    google_calendar_config = models.JSONField(default=dict, blank=True)
     settings = models.JSONField(default=dict, blank=True)
     
     # Enterprise Features

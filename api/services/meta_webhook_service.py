@@ -264,13 +264,13 @@ class MetaWebhookService:
                     relevant = find_relevant_chunks(query_embedding, chunks_data, top_k=5)
                     
                     if relevant and relevant[0]['score'] > 0.3:
-                        ai_reply = get_rag_response(incoming_text, relevant)
+                        ai_reply = get_rag_response(incoming_text, relevant, client_model=client)
                     else:
-                        ai_reply = get_ai_response(incoming_text, client.ai_context or "")
+                        ai_reply = get_ai_response(incoming_text, client.ai_context or "", client_model=client)
                 else:
-                    ai_reply = get_ai_response(incoming_text, client.ai_context or "")
+                    ai_reply = get_ai_response(incoming_text, client.ai_context or "", client_model=client)
             else:
-                ai_reply = get_ai_response(incoming_text, client.ai_context or "")
+                ai_reply = get_ai_response(incoming_text, client.ai_context or "", client_model=client)
 
             if ai_reply:
                 MetaWebhookService.send_whatsapp_message(client, to_number, ai_reply, phone_number_id)
@@ -329,10 +329,10 @@ class MetaWebhookService:
                     } for c in chunks.select_related('document')]
                     relevant = find_relevant_chunks(query_embedding, chunks_data, top_k=5)
                     if relevant and relevant[0]['score'] > 0.3:
-                        ai_reply = get_rag_response(incoming_text, relevant)
+                        ai_reply = get_rag_response(incoming_text, relevant, client_model=client)
             
             if not ai_reply:
-                ai_reply = get_ai_response(incoming_text, client.ai_context or "")
+                ai_reply = get_ai_response(incoming_text, client.ai_context or "", client_model=client)
                 
             if ai_reply:
                 MetaWebhookService.send_fb_ig_message(client, platform, sender_id, ai_reply)
@@ -343,6 +343,10 @@ class MetaWebhookService:
 
     @staticmethod
     def send_whatsapp_message(client, to_number, text_body, phone_number_id, buttons=None, media_url=None, media_type=None):
+        if text_body:
+            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+            text_body = text_body.replace('{{calendar_link}}', f"{frontend_url}/book/{client.id}")
+            
         url = f"https://graph.facebook.com/{os.getenv('WHATSAPP_API_VERSION', 'v19.0')}/{phone_number_id}/messages"
         token = client.whatsapp_access_token
         headers = {
@@ -415,6 +419,10 @@ class MetaWebhookService:
 
     @staticmethod
     def send_fb_ig_message(client, platform, recipient_id, text_body, buttons=None, media_url=None, media_type=None):
+        if text_body:
+            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+            text_body = text_body.replace('{{calendar_link}}', f"{frontend_url}/book/{client.id}")
+            
         config = client.facebook_config if platform == 'FACEBOOK' else (client.instagram_config or {})
         access_token = config.get('access_token') or (client.facebook_config or {}).get('access_token') or client.whatsapp_access_token
         
