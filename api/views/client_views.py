@@ -294,7 +294,8 @@ class ClientMessagesView(APIView):
                 "channel": msg.channel,
                 "message_type": msg.message_type,
                 "status": msg.status,
-                "created_at": msg.created_at
+                "created_at": msg.created_at,
+                "metadata": msg.metadata
             })
         return Response(data)
 
