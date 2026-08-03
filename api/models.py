@@ -108,6 +108,15 @@ class User(AbstractUser):
     availability_status = models.CharField(max_length=30, default='AVAILABLE', blank=True) # AVAILABLE, BUSY, IN_MEETING, ON_LEAVE
     is_online = models.BooleanField(default=False)
     last_active_at = models.DateTimeField(null=True, blank=True)
+    timezone = models.CharField(max_length=50, default='UTC', blank=True)
+    language = models.CharField(max_length=50, default='English', blank=True)
+    assigned_social_channels = models.JSONField(default=list, blank=True) # e.g. ["instagram_acc_a", "whatsapp_num_1"]
+    permission_matrix = models.JSONField(default=dict, blank=True) # e.g. {"instagram": "FULL", "crm": "VIEW"}
+    current_page = models.CharField(max_length=255, null=True, blank=True)
+    last_login_ip = models.CharField(max_length=100, null=True, blank=True)
+    last_login_browser = models.CharField(max_length=255, null=True, blank=True)
+    last_login_os = models.CharField(max_length=255, null=True, blank=True)
+    login_history = models.JSONField(default=list, blank=True)
 
     def __str__(self):
         return f"{self.username} ({self.enterprise_role or self.role})"
@@ -397,6 +406,43 @@ class Product(models.Model):
     description = models.TextField(null=True, blank=True)
     image_url = models.CharField(max_length=500, null=True, blank=True)
     in_stock = models.BooleanField(default=True)
+
+    # Extended Basic Info
+    sku = models.CharField(max_length=100, null=True, blank=True)
+    brand = models.CharField(max_length=100, null=True, blank=True)
+    product_type = models.CharField(max_length=50, default='PHYSICAL')  # PHYSICAL, DIGITAL, BOOK, SERVICE, SUBSCRIPTION, COURSE, CONSULTING
+    currency = models.CharField(max_length=10, default='USD')
+    discount_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    stock_quantity = models.IntegerField(default=100)
+    availability_status = models.CharField(max_length=50, default='IN_STOCK')  # IN_STOCK, OUT_OF_STOCK, PRE_ORDER, BACKORDER
+    tags = models.JSONField(default=list, blank=True)
+
+    # Media & Assets
+    gallery_images = models.JSONField(default=list, blank=True)
+    video_url = models.CharField(max_length=500, null=True, blank=True)
+    pdf_brochure_url = models.CharField(max_length=500, null=True, blank=True)
+
+    # Product Link Section
+    product_url = models.CharField(max_length=1000, null=True, blank=True)
+    link_type = models.CharField(max_length=50, default='WEBSITE')  # WEBSITE, BUY_NOW, CHECKOUT, PAYMENT, BOOKING, DOWNLOAD, DOCUMENTATION, VIDEO, EXTERNAL_MARKETPLACE, CUSTOM
+    cta_text = models.CharField(max_length=100, default='View Product')
+    button_color = models.CharField(max_length=50, default='#10B981')
+    button_icon = models.CharField(max_length=50, default='ExternalLink')
+    open_behavior = models.CharField(max_length=50, default='NEW_TAB')  # SAME_WINDOW, NEW_TAB, IN_APP_BROWSER
+    short_url = models.CharField(max_length=255, null=True, blank=True)
+    qr_code_url = models.CharField(max_length=500, null=True, blank=True)
+
+    # Analytics & Metrics
+    views_count = models.IntegerField(default=0)
+    link_clicks_count = models.IntegerField(default=0)
+    button_clicks_count = models.IntegerField(default=0)
+    whatsapp_sends_count = models.IntegerField(default=0)
+    conversions_count = models.IntegerField(default=0)
+    revenue_generated = models.DecimalField(max_digits=12, decimal_places=2, default=0.00)
+
+    # Specifications / Details
+    specifications = models.JSONField(default=dict, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

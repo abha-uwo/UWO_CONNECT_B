@@ -632,12 +632,16 @@ class MetaWebhookService:
         msg_body = f"🛍️ *{client.business_name} Product Catalog*:\n\n"
         for p in products:
             price_str = f"${p.price}" if p.price else "Contact for Price"
-            msg_body += f"📦 *{p.name}* ({price_str})\n"
+            msg_body += f"📦 *{p.name}* - {price_str}\n"
             if p.description:
                 msg_body += f"  _{p.description}_\n"
+            if getattr(p, 'product_url', None):
+                cta = getattr(p, 'cta_text', 'View Product') or 'View Product'
+                tracking_url = f"http://127.0.0.1:8080/api/products/{p.id}/redirect_link/"
+                msg_body += f"  🔗 [{cta}]: {tracking_url}\n"
             msg_body += "\n"
 
-        msg_body += "👉 Reply with *'Buy'* or click *🛒 Buy Now* to place an order!"
+        msg_body += "👉 Click a product link above or reply to order!"
         buttons = ["🛒 Buy Now", "💬 Talk to Support"]
 
         if platform == 'WHATSAPP':
