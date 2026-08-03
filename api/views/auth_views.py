@@ -383,6 +383,13 @@ class InstagramEmbeddedSignupView(APIView):
         ig_url = f"https://graph.instagram.com/v20.0/me?fields=id,username,name&access_token={long_lived_token}"
         ig_res = requests.get(ig_url).json()
         ig_username = ig_res.get('username', ig_res.get('name', f"IG_{ig_user_id}"))
+        
+        # 4. Auto-Subscribe App to Webhooks for this user
+        try:
+            subscribe_url = f"https://graph.instagram.com/v20.0/{ig_user_id}/subscribed_apps"
+            requests.post(subscribe_url, params={"access_token": long_lived_token})
+        except Exception as e:
+            print(f"Failed to auto-subscribe webhooks: {e}")
             
         import datetime
         client = request.user.client
