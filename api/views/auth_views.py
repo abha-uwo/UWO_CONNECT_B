@@ -387,7 +387,10 @@ class InstagramEmbeddedSignupView(APIView):
         # 4. Auto-Subscribe App to Webhooks for this user
         try:
             subscribe_url = f"https://graph.instagram.com/v20.0/{ig_user_id}/subscribed_apps"
-            requests.post(subscribe_url, params={"access_token": long_lived_token})
+            requests.post(subscribe_url, params={
+                "access_token": long_lived_token,
+                "subscribed_fields": "messages,messaging_postbacks"
+            })
         except Exception as e:
             print(f"Failed to auto-subscribe webhooks: {e}")
             
