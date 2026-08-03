@@ -213,10 +213,20 @@ class MetaWebhookService:
 
                 messaging = entry.get('messaging', [])
                 for event in messaging:
+                    # Ignore delivery and read receipts
+                    if 'delivery' in event or 'read' in event:
+                        continue
+                        
                     sender_id = event.get('sender', {}).get('id')
                     body = ""
+                    
                     if 'message' in event:
                         msg_data = event.get('message', {})
+                        
+                        # Ignore messages sent by our own page/bot (echoes)
+                        if msg_data.get('is_echo'):
+                            continue
+                            
                         if 'quick_reply' in msg_data:
                             body = msg_data.get('quick_reply', {}).get('payload', '')
                         else:
@@ -245,19 +255,51 @@ class MetaWebhookService:
 
                     elif 'postback' in event:
                         body = event.get('postback', {}).get('payload', '') or event.get('postback', {}).get('title', '')
+                    else:
+                        # Unhandled event type, ignore
+                        continue
                     
                     if not body:
                         body = "📎 [Attachment / Media]"
                     
-                    contact, _ = ContactRepository.get_contact_or_create(
+                    contact_name = f"{platform} User"
+                    access_token = None
+                    if platform == 'INSTAGRAM' and client.instagram_config:
+                        access_token = client.instagram_config.get('access_token')
+                    elif platform == 'FACEBOOK' and client.facebook_config:
+                        access_token = client.facebook_config.get('access_token')
+
+                    if access_token:
+                        try:
+                            import requests
+                            if platform == 'INSTAGRAM':
+                                url = f"https://graph.facebook.com/v20.0/{sender_id}?fields=name,username,profile_pic&access_token={access_token}"
+                                res = requests.get(url, timeout=5)
+                                if res.status_code == 200:
+                                    data = res.json()
+                                    contact_name = data.get('username') or data.get('name') or contact_name
+                            elif platform == 'FACEBOOK':
+                                url = f"https://graph.facebook.com/v20.0/{sender_id}?fields=first_name,last_name,name,profile_pic&access_token={access_token}"
+                                res = requests.get(url, timeout=5)
+                                if res.status_code == 200:
+                                    data = res.json()
+                                    contact_name = data.get('name') or f"{data.get('first_name', '')} {data.get('last_name', '')}".strip() or contact_name
+                        except Exception as ex:
+                            logger.error(f"Failed to fetch {platform} user profile for {sender_id}: {str(ex)}")
+
+                    contact, created = ContactRepository.get_contact_or_create(
                         client=client,
                         platform_id=sender_id,
                         defaults={
                             'phone_number': sender_id,
-                            'name': f"{platform} User",
+                            'name': contact_name,
                             'stage': 'NEW'
                         }
                     )
+                    
+                    if not created and contact.name in ['INSTAGRAM User', 'FACEBOOK User'] and contact_name not in ['INSTAGRAM User', 'FACEBOOK User']:
+                        contact.name = contact_name
+                        contact.save()
 
                     MessageRepository.create_message(
                         client=client,
