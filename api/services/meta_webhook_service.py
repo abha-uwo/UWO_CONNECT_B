@@ -218,12 +218,17 @@ class MetaWebhookService:
                         continue
                         
                     sender_id = event.get('sender', {}).get('id')
+                    
+                    # If the sender is our own Page/Account, it's an echo message sent by the bot. Ignore it!
+                    if str(sender_id) == str(recipient_id):
+                        continue
+                        
                     body = ""
                     
                     if 'message' in event:
                         msg_data = event.get('message', {})
                         
-                        # Ignore messages sent by our own page/bot (echoes)
+                        # Explicit is_echo check just in case
                         if msg_data.get('is_echo'):
                             continue
                             
