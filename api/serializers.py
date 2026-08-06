@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import User, Client, Automation, Workflow, GlobalSetting, Contact, Template, Campaign, SupportMessage, AuditLog, TeamInvite, KnowledgeDocument, TeamMessage, Product, Order, Project, Task, TaskComment, WorkReport, WorkApproval, TeamChannel, TeamChatMessage, Attendance, LeaveRequest
+from .models import User, Client, Automation, Workflow, GlobalSetting, Contact, Template, Campaign, SupportMessage, AuditLog, TeamInvite, KnowledgeDocument, TeamMessage, Product, Order, Project, Task, TaskComment, WorkReport, WorkApproval, TeamChannel, TeamChatMessage, Attendance, LeaveRequest, Message, Conversation, ConversationAuditLog, Guide, GuideSection, GuideStep, GuideProgress
 from .repositories.contact_repository import ContactRepository
 from .repositories.workflow_repository import WorkflowRepository
 from .repositories.automation_repository import AutomationRepository
@@ -417,5 +417,109 @@ class LeaveRequestSerializer(serializers.ModelSerializer):
         model = LeaveRequest
         fields = '__all__'
         read_only_fields = ('client', 'user', 'created_at')
+
+
+class ConversationSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    client = ObjectIdField(read_only=True)
+    assigned_to_name = serializers.ReadOnlyField(source='assigned_to.username')
+    assigned_to_avatar = serializers.SerializerMethodField()
+    locked_by_name = serializers.ReadOnlyField(source='locked_by.username')
+    contact_name = serializers.SerializerMethodField()
+    contact_phone = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Conversation
+        fields = '__all__'
+        read_only_fields = ('client', 'created_at', 'updated_at')
+
+    def get_assigned_to_avatar(self, obj):
+        if obj.assigned_to and hasattr(obj.assigned_to, 'username'):
+            return f"https://api.dicebear.com/7.x/avataaars/svg?seed={obj.assigned_to.username}"
+        return None
+
+    def get_contact_name(self, obj):
+        if obj.contact:
+            return obj.contact.name or obj.contact.phone_number or obj.contact_platform_id
+        return obj.contact_platform_id
+
+    def get_contact_phone(self, obj):
+        if obj.contact:
+            return obj.contact.phone_number
+        return None
+
+
+class ConversationAuditLogSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    client = ObjectIdField(read_only=True)
+
+    class Meta:
+        model = ConversationAuditLog
+        fields = '__all__'
+        read_only_fields = ('client', 'created_at')
+
+
+class MessageSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    client = ObjectIdField(read_only=True)
+
+    class Meta:
+        model = Message
+        fields = '__all__'
+        read_only_fields = ('client', 'created_at')
+
+
+class GuideStepSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+
+    class Meta:
+        model = GuideStep
+        fields = '__all__'
+
+
+class GuideSectionSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    steps = GuideStepSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = GuideSection
+        fields = '__all__'
+
+
+class GuideListSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    total_sections = serializers.SerializerMethodField()
+    total_steps = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Guide
+        fields = ['id', 'slug', 'title', 'icon', 'category', 'status', 'description', 'estimated_time', 'order', 'language', 'version', 'total_sections', 'total_steps']
+
+    def get_total_sections(self, obj):
+        return obj.sections.count()
+
+    def get_total_steps(self, obj):
+        return GuideStep.objects.filter(section__guide=obj).count()
+
+
+class GuideDetailSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+    sections = GuideSectionSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Guide
+        fields = '__all__'
+
+
+class GuideProgressSerializer(serializers.ModelSerializer):
+    id = ObjectIdField(read_only=True)
+
+    class Meta:
+        model = GuideProgress
+        fields = '__all__'
+        read_only_fields = ('user',)
+
+
+
 
 

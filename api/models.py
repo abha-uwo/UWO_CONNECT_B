@@ -29,6 +29,8 @@ class Client(models.Model):
     google_sheets_enabled = models.BooleanField(default=False)
     google_docs_enabled = models.BooleanField(default=False)
     google_slides_enabled = models.BooleanField(default=False)
+    youtube_enabled = models.BooleanField(default=False)
+    google_news_enabled = models.BooleanField(default=False)
     
     # WhatsApp Config
     whatsapp_access_token = models.TextField(null=True, blank=True)
@@ -55,6 +57,8 @@ class Client(models.Model):
     google_sheets_config = models.JSONField(default=dict, blank=True)
     google_docs_config = models.JSONField(default=dict, blank=True)
     google_slides_config = models.JSONField(default=dict, blank=True)
+    youtube_config = models.JSONField(default=dict, blank=True)
+    google_news_config = models.JSONField(default=dict, blank=True)
     settings = models.JSONField(default=dict, blank=True)
     
     # Enterprise Features
@@ -213,11 +217,77 @@ class Message(models.Model):
     to_address = models.CharField(max_length=255)
     body = models.TextField()
     message_type = models.CharField(max_length=10, choices=TYPE_CHOICES)
+    sender_user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='sent_messages')
+    sender_name = models.CharField(max_length=255, null=True, blank=True)
+    sender_avatar = models.CharField(max_length=500, null=True, blank=True)
+    sender_department = models.CharField(max_length=100, null=True, blank=True)
+    ai_suggested_reply = models.TextField(null=True, blank=True)
     whatsapp_message_id = models.CharField(max_length=255, null=True, blank=True)
     meta_message_id = models.CharField(max_length=255, null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    edited_at = models.DateTimeField(null=True, blank=True)
+    edited_history = models.JSONField(default=list, blank=True)
     metadata = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+class Conversation(models.Model):
+    STATUS_CHOICES = [
+        ('OPEN', 'Open'),
+        ('IN_PROGRESS', 'In Progress'),
+        ('WAITING', 'Waiting for Customer'),
+        ('RESOLVED', 'Resolved'),
+        ('CLOSED', 'Closed'),
+    ]
+    PRIORITY_CHOICES = [
+        ('LOW', 'Low'),
+        ('MEDIUM', 'Medium'),
+        ('HIGH', 'High'),
+        ('URGENT', 'Urgent'),
+    ]
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='conversations')
+    contact = models.ForeignKey('Contact', on_delete=models.CASCADE, related_name='conversations', null=True, blank=True)
+    contact_platform_id = models.CharField(max_length=255)
+    channel = models.CharField(max_length=20, default='WHATSAPP')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='OPEN')
+    priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='MEDIUM')
+    assigned_to = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_conversations')
+    assigned_department = models.CharField(max_length=100, default='General', blank=True)
+    is_locked = models.BooleanField(default=False)
+    locked_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='locked_conversations')
+    locked_at = models.DateTimeField(null=True, blank=True)
+    typing_users = models.JSONField(default=list, blank=True)
+    viewing_users = models.JSONField(default=list, blank=True)
+    tags = models.JSONField(default=list, blank=True)
+    unread_count_admin = models.IntegerField(default=0)
+    unread_count_employee = models.IntegerField(default=0)
+    last_message_summary = models.TextField(blank=True, default='')
+    last_message_at = models.DateTimeField(auto_now=True)
+    first_response_time_seconds = models.IntegerField(default=0)
+    resolution_time_seconds = models.IntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-last_message_at']
+
+    def __str__(self):
+        return f"Convo {self.contact_platform_id} ({self.channel}) [{self.status}]"
+
+class ConversationAuditLog(models.Model):
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name='audit_logs', null=True, blank=True)
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='conversation_audit_logs')
+    actor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    actor_name = models.CharField(max_length=255, default='System')
+    actor_role = models.CharField(max_length=100, default='Admin')
+    event_type = models.CharField(max_length=50) # OPENED, VIEWED, ASSIGNED, REPLIED, NOTE_ADDED, STATUS_CHANGED, TYPING, LOCKED, UNLOCKED, TAKEOVER, TRANSFERRED, CLOSED, REOPENED
+    details = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"[{self.event_type}] {self.actor_name} on Convo #{self.conversation_id if self.conversation else 'N/A'}"
 
 class Log(models.Model):
     client = models.ForeignKey(Client, on_delete=models.SET_NULL, null=True, blank=True, related_name='logs')
@@ -728,6 +798,99 @@ class LeaveRequest(models.Model):
 
     def __str__(self):
         return f"Leave ({self.leave_type}) {self.start_date} to {self.end_date} - {self.user.username}"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Interactive Learning Center & Documentation Models
+# ─────────────────────────────────────────────────────────────────────────────
+
+class Guide(models.Model):
+    STATUS_CHOICES = [
+        ('DRAFT', 'Draft'),
+        ('PUBLISHED', 'Published'),
+        ('ARCHIVED', 'Archived'),
+    ]
+
+    slug = models.SlugField(max_length=100, unique=True)
+    title = models.CharField(max_length=255)
+    icon = models.CharField(max_length=50, default='BookOpen')  # Lucide icon name
+    category = models.CharField(max_length=100, default='General')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PUBLISHED')
+    description = models.TextField(blank=True, null=True)
+    estimated_time = models.CharField(max_length=50, default='10 mins')
+    order = models.IntegerField(default=0)
+    language = models.CharField(max_length=10, default='en')
+    version = models.CharField(max_length=20, default='1.0')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['order', 'title']
+
+    def __str__(self):
+        return f"{self.title} ({self.slug})"
+
+
+class GuideSection(models.Model):
+    guide = models.ForeignKey(Guide, on_delete=models.CASCADE, related_name='sections')
+    title = models.CharField(max_length=255)
+    slug = models.SlugField(max_length=100, blank=True, null=True)
+    icon = models.CharField(max_length=50, default='ChevronRight')
+    order = models.IntegerField(default=0)
+    is_expandable = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['order', 'id']
+
+    def __str__(self):
+        return f"{self.guide.title} - {self.title}"
+
+
+class GuideStep(models.Model):
+    STEP_TYPE_CHOICES = [
+        ('text', 'Rich Text'),
+        ('code', 'Code Snippet'),
+        ('image', 'Image Screenshot'),
+        ('video', 'Video Tutorial'),
+        ('diagram', 'Flow Diagram'),
+        ('checklist', 'Interactive Checklist'),
+        ('faq', 'FAQ Accordion'),
+        ('warning', 'Warning Alert'),
+        ('tip', 'Pro Tip Alert'),
+    ]
+
+    section = models.ForeignKey(GuideSection, on_delete=models.CASCADE, related_name='steps')
+    title = models.CharField(max_length=255, blank=True, null=True)
+    step_type = models.CharField(max_length=20, choices=STEP_TYPE_CHOICES, default='text')
+    content = models.TextField(blank=True, null=True)  # Markdown/Text content
+    media_url = models.URLField(max_length=500, blank=True, null=True)
+    code_snippet = models.TextField(blank=True, null=True)
+    code_language = models.CharField(max_length=50, default='bash', blank=True, null=True)
+    checklist_items = models.JSONField(default=list, blank=True) # list of items if checklist
+    order = models.IntegerField(default=0)
+    is_completable = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['order', 'id']
+
+    def __str__(self):
+        return f"{self.section.title} - Step {self.order}: {self.title or self.step_type}"
+
+
+class GuideProgress(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='guide_progress')
+    guide = models.ForeignKey(Guide, on_delete=models.CASCADE, related_name='user_progress')
+    completed_steps = models.JSONField(default=list, blank=True) # List of step IDs completed
+    bookmarked_sections = models.JSONField(default=list, blank=True) # List of section IDs bookmarked
+    last_step_id = models.IntegerField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('user', 'guide')
+
+    def __str__(self):
+        return f"{self.user.username} progress on {self.guide.title}"
+
 
 
 

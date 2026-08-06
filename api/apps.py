@@ -16,3 +16,40 @@ class ApiConfig(AppConfig):
             except Exception as e:
                 print(f"\n[ERROR] MongoDB connection FAILED!")
                 print(f"Check your .env URL and password. Reason: {str(e)}\n")
+
+            # Start background YouTube poller thread in the main worker process
+            is_main_process = os.environ.get('RUN_MAIN') == 'true' or '--noreload' in sys.argv
+            if is_main_process:
+                import threading
+                import time
+                from django.db import close_old_connections
+
+                def youtube_poller():
+                    time.sleep(5)  # Wait for db setup to settle
+                    print("[YouTube Poller]: Background automation loop STARTED.")
+                    while True:
+                        try:
+                            close_old_connections()
+                            from api.models import Client
+                            from api.views.youtube_views import auto_reply_to_youtube_comments, check_and_broadcast_youtube_uploads
+                            
+                            clients = Client.objects.filter(youtube_enabled=True)
+                            for client in clients:
+                                config = client.youtube_config or {}
+                                
+                                # Auto-reply comments
+                                if config.get("bot_enabled", False):
+                                    auto_reply_to_youtube_comments(client)
+                                
+                                # Broadcast uploads
+                                if config.get("broadcast_enabled", False):
+                                    check_and_broadcast_youtube_uploads(client)
+                        except Exception as poll_err:
+                            print(f"[YouTube Poller Error]: {poll_err}")
+                        
+                        # Wait 15 seconds before next polling iteration
+                        time.sleep(15)
+
+                thread = threading.Thread(target=youtube_poller, daemon=True, name="YouTubeBackgroundPoller")
+                thread.start()
+
