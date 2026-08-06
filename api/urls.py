@@ -9,7 +9,7 @@ from .views import (
     SupportMessageViewSet, AdminImpersonateView, AuditLogViewSet,
     SuggestDraftView, TeamMemberViewSet, TeamInviteView, TeamChatView, ProductViewSet, OrderViewSet,
     CreatePaymentOrderView, VerifyPaymentView, PaymentHistoryView, CashfreeWebhookView, RazorpayWebhookView,
-    WhatsAppEmbeddedSignupView, GmailConnectView, GmailCallbackView, GmailSyncView,
+    WhatsAppEmbeddedSignupView, GmailConnectView, GmailCallbackView, GmailSyncView, YouTubeConnectView, YouTubeCallbackView, YouTubeStatusView, YouTubeSyncView, YouTubeAnalyticsView, YouTubeVideosView, YouTubeCommentsView, YouTubeSettingsView, YouTubeCheckNewView, YouTubeUploadView, YouTubeChannelProfileView, YouTubeDeleteView, YouTubeAISuggestReplyView,
     InstagramEmbeddedSignupView, FacebookEmbeddedSignupView, InstagramOAuthCallbackView,
     ProjectViewSet, TaskViewSet, WorkReportView, WorkApprovalView, TeamChannelView,
     TeamChatMessageView, TeamAnalyticsView, TeamAICopilotView, AttendanceViewSet, LeaveRequestViewSet,
@@ -18,7 +18,10 @@ from .views import (
     GoogleSheetsConnectView, GoogleSheetsCallbackView, GoogleSheetsStatusView, GoogleSheetsSyncView, GoogleSheetsAppendRowView, GoogleSheetsDisconnectView,
     GoogleDocsConnectView, GoogleDocsCallbackView, GoogleDocsStatusView, GoogleDocsSyncView, GoogleDocsCreateDocView, GoogleDocsDisconnectView,
     GoogleSlidesConnectView, GoogleSlidesCallbackView, GoogleSlidesStatusView, GoogleSlidesSyncView, GoogleSlidesCreatePresentationView, GoogleSlidesDisconnectView,
-    PublicCalendarSlotsView, PublicCalendarBookView
+    PublicCalendarSlotsView, PublicCalendarBookView,
+    ConversationViewSet, MonitoringStatsView, MonitoringAnalyticsView,
+    GoogleNewsSettingsView, GoogleNewsFeedView, GoogleNewsAISummarizeView, GoogleNewsSendAlertView,
+    GuideViewSet, GuideSectionDetailView, GuideStepDetailView, GuideProgressView
 )
 from api.views.zoho_views import ZohoConnectView, ZohoCallbackView, ZohoDisconnectView, ZohoTestLeadView
 
@@ -27,6 +30,7 @@ router.register(r'clients', ClientViewSet, basename='client')
 router.register(r'automations', AutomationViewSet, basename='automation')
 router.register(r'workflows', WorkflowViewSet, basename='workflow')
 router.register(r'contacts', ContactViewSet, basename='contact')
+router.register(r'conversations', ConversationViewSet, basename='conversation')
 router.register(r'templates', TemplateViewSet, basename='template')
 router.register(r'campaigns', CampaignViewSet, basename='campaign')
 router.register(r'support/messages', SupportMessageViewSet, basename='support-message')
@@ -38,9 +42,16 @@ router.register(r'team/attendance', AttendanceViewSet, basename='team-attendance
 router.register(r'team/leaves', LeaveRequestViewSet, basename='team-leave')
 router.register(r'products', ProductViewSet, basename='product')
 router.register(r'orders', OrderViewSet, basename='order')
+router.register(r'guides', GuideViewSet, basename='guide')
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('guides/progress/', GuideProgressView.as_view(), name='guide-progress-list'),
+    path('guides/progress/<slug:slug>/', GuideProgressView.as_view(), name='guide-progress-detail'),
+    path('guides/sections/<int:section_id>/', GuideSectionDetailView.as_view(), name='guide-section-detail'),
+    path('guides/steps/<int:step_id>/', GuideStepDetailView.as_view(), name='guide-step-detail'),
+    path('monitoring/stats/', MonitoringStatsView.as_view(), name='monitoring-stats'),
+    path('monitoring/analytics/', MonitoringAnalyticsView.as_view(), name='monitoring-analytics'),
     path('team/invites/', TeamInviteView.as_view(), name='team-invites'),
     path('team/chat/', TeamChatView.as_view(), name='team-chat'),
     path('team/reports/', WorkReportView.as_view(), name='team-reports'),
@@ -152,6 +163,29 @@ urlpatterns = [
     path('google-slides/create-presentation', GoogleSlidesCreatePresentationView.as_view(), name='gslides-create-presentation'),
     path('google-slides/create-presentation/', GoogleSlidesCreatePresentationView.as_view()),
     path('google-slides/disconnect', GoogleSlidesDisconnectView.as_view(), name='gslides-disconnect'),
+    # YouTube Integration
+    path('auth/youtube/connect', YouTubeConnectView.as_view(), name='youtube-connect'),
+    path('auth/youtube/callback', YouTubeCallbackView.as_view(), name='youtube-callback'),
+    path('auth/youtube/status', YouTubeStatusView.as_view(), name='youtube-status'),
+    path('auth/youtube/sync', YouTubeSyncView.as_view(), name='youtube-sync'),
+    path('youtube/analytics', YouTubeAnalyticsView.as_view(), name='youtube-analytics'),
+    path('youtube/analytics/', YouTubeAnalyticsView.as_view()),
+    path('youtube/videos', YouTubeVideosView.as_view(), name='youtube-videos'),
+    path('youtube/videos/', YouTubeVideosView.as_view()),
+    path('youtube/comments', YouTubeCommentsView.as_view(), name='youtube-comments'),
+    path('youtube/comments/', YouTubeCommentsView.as_view()),
+    path('youtube/ai-suggest-reply', YouTubeAISuggestReplyView.as_view(), name='youtube-ai-suggest-reply'),
+    path('youtube/ai-suggest-reply/', YouTubeAISuggestReplyView.as_view()),
+    path('youtube/settings', YouTubeSettingsView.as_view(), name='youtube-settings'),
+    path('youtube/settings/', YouTubeSettingsView.as_view()),
+    path('youtube/broadcast-check', YouTubeCheckNewView.as_view(), name='youtube-broadcast-check'),
+    path('youtube/broadcast-check/', YouTubeCheckNewView.as_view()),
+    path('youtube/upload', YouTubeUploadView.as_view(), name='youtube-upload'),
+    path('youtube/upload/', YouTubeUploadView.as_view()),
+    path('youtube/profile', YouTubeChannelProfileView.as_view(), name='youtube-profile'),
+    path('youtube/profile/', YouTubeChannelProfileView.as_view()),
+    path('youtube/delete', YouTubeDeleteView.as_view(), name='youtube-delete'),
+    path('youtube/delete/', YouTubeDeleteView.as_view()),
     path('google-slides/disconnect/', GoogleSlidesDisconnectView.as_view()),
     
     # Zoho Integration
@@ -164,6 +198,15 @@ urlpatterns = [
     path('zoho/test-lead', ZohoTestLeadView.as_view(), name='zoho-test-lead'),
     path('zoho/test-lead/', ZohoTestLeadView.as_view()),
     
+    # Google News Integration
+    path('google-news/settings', GoogleNewsSettingsView.as_view(), name='google-news-settings'),
+    path('google-news/settings/', GoogleNewsSettingsView.as_view()),
+    path('google-news/feed', GoogleNewsFeedView.as_view(), name='google-news-feed'),
+    path('google-news/feed/', GoogleNewsFeedView.as_view()),
+    path('google-news/summarize', GoogleNewsAISummarizeView.as_view(), name='google-news-summarize'),
+    path('google-news/summarize/', GoogleNewsAISummarizeView.as_view()),
+    path('google-news/send-alert', GoogleNewsSendAlertView.as_view(), name='google-news-send-alert'),
+    path('google-news/send-alert/', GoogleNewsSendAlertView.as_view()),
     # Public endpoints
     path('public/calendar/<str:client_id>/slots', PublicCalendarSlotsView.as_view(), name='public-calendar-slots'),
     path('public/calendar/<str:client_id>/book', PublicCalendarBookView.as_view(), name='public-calendar-book'),

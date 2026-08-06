@@ -2,7 +2,20 @@ import os
 import numpy as np
 from openai import OpenAI
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+_openai_client = None
+
+def _get_client():
+    """Lazy-initialize the OpenAI client so missing API key doesn't crash at import time."""
+    global _openai_client
+    if _openai_client is None:
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            return None
+        _openai_client = OpenAI(api_key=api_key)
+    return _openai_client
+
+# Keep backward compat — functions that used `client` directly now call _get_client()
+client = None  # Will be resolved lazily via _get_client()
 
 # ===== EMBEDDING FUNCTIONS =====
 
@@ -18,8 +31,10 @@ def get_embedding(text):
         text = text.replace("\n", " ").strip()
         if not text:
             return []
-        
-        response = client.embeddings.create(
+        ai_client = _get_client()
+        if not ai_client:
+            return []
+        response = ai_client.embeddings.create(
             model=EMBEDDING_MODEL,
             input=text
         )
@@ -101,6 +116,9 @@ def get_ai_response(prompt, context="", client_model=None):
     """
     import json
     try:
+        ai_client = _get_client()
+        if not ai_client:
+            return "AI service is not configured. Please add an OPENAI_API_KEY."
         system_prompt = f"You are an AI assistant for a business. Context: {context}. Be helpful, professional, and concise. Only book appointments if the user explicitly confirms the time."
         
         messages = [
@@ -153,7 +171,7 @@ def get_ai_response(prompt, context="", client_model=None):
             }
         ]
 
-        response = client.chat.completions.create(
+        response = ai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
             tools=tools,
@@ -190,7 +208,7 @@ def get_ai_response(prompt, context="", client_model=None):
                 })
                 
             # Send the tool results back to the model to get the final textual response
-            second_response = client.chat.completions.create(
+            second_response = ai_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=messages,
                 max_tokens=500
@@ -213,6 +231,9 @@ def get_rag_response(query, relevant_chunks, client_model=None):
     """
     import json
     try:
+        ai_client = _get_client()
+        if not ai_client:
+            return "AI service is not configured. Please add an OPENAI_API_KEY."
         # Build context from relevant chunks
         context_parts = []
         for i, chunk in enumerate(relevant_chunks, 1):
@@ -284,7 +305,7 @@ STRICT RULES:
             }
         ]
 
-        response = client.chat.completions.create(
+        response = ai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
             tools=tools,
@@ -321,7 +342,7 @@ STRICT RULES:
                     "content": tool_result,
                 })
                 
-            second_response = client.chat.completions.create(
+            second_response = ai_client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=messages,
                 max_tokens=600
@@ -357,13 +378,16 @@ def get_ai_draft(chat_history):
     chat_history: list of dicts [{'role': 'user'/'assistant', 'content': 'message'}]
     """
     try:
+        ai_client = _get_client()
+        if not ai_client:
+            return "AI service is not configured."
         system_prompt = "You are a professional customer support agent. Generate a concise, friendly, and helpful draft reply to the user's last message, taking into account the context of the conversation. Output ONLY the draft message."
         
         # Prepare messages
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(chat_history)
         
-        response = client.chat.completions.create(
+        response = ai_client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
             max_tokens=300,

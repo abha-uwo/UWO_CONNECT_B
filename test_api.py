@@ -1,1 +1,0 @@
-import requests, json; url = 'https://aisaconnectback-anaqbuapb6c6apgy.centralindia-01.azurewebsites.net/api/messages/'; payload = {'client_id': 1, 'contact_id': 1, 'body': 'Hello from test', 'message_type': 'text'}; res = requests.post(url, json=payload); print(res.status_code, res.text)

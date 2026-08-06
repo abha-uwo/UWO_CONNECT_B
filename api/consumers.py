@@ -27,6 +27,7 @@ class InboxConsumer(AsyncWebsocketConsumer):
                 await self.close()
                 return
                 
+            self.user = user
             self.client_id = str(user.client_id)
             self.room_group_name = f'inbox_{self.client_id}'
 
@@ -41,7 +42,13 @@ class InboxConsumer(AsyncWebsocketConsumer):
             # Send initial connection success message
             await self.send(text_data=json.dumps({
                 'type': 'connection_established',
-                'message': 'Connected to inbox successfully'
+                'message': 'Connected to inbox successfully',
+                'user': {
+                    'id': str(user.id),
+                    'username': user.username,
+                    'role': user.role,
+                    'department': user.department
+                }
             }))
 
         except Exception as e:
@@ -56,16 +63,31 @@ class InboxConsumer(AsyncWebsocketConsumer):
 
     async def disconnect(self, close_code):
         if hasattr(self, 'room_group_name'):
-            # Leave room group
             await self.channel_layer.group_discard(
                 self.room_group_name,
                 self.channel_name
             )
 
-    # Receive message from WebSocket (if frontend sends anything, mostly for debugging or manual testing)
+    # Receive message from WebSocket and broadcast to group
     async def receive(self, text_data):
-        text_data_json = json.loads(text_data)
-        message = text_data_json.get('message', '')
+        try:
+            data = json.loads(text_data)
+            action_type = data.get('type')
+
+            if action_type in ['typing_status', 'view_conversation', 'takeover_event', 'transfer_event', 'lock_event', 'status_change_event', 'note_event']:
+                # Broadcast payload to group
+                await self.channel_layer.group_send(
+                    self.room_group_name,
+                    {
+                        'type': 'broadcast_event',
+                        'event_data': data
+                    }
+                )
+        except Exception as e:
+            pass
+
+    async def broadcast_event(self, event):
+        await self.send(text_data=json.dumps(event['event_data']))
 
     # Receive message from room group
     async def new_message(self, event):

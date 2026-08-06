@@ -18,7 +18,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from api.models import Client
+from ..models import Client
 
 logger = logging.getLogger(__name__)
 
@@ -493,8 +493,8 @@ class OneDriveSyncView(APIView):
             _create_folder_tree(token)
 
             # Sync all existing media messages in background
-            from api.models import Message
-            from api.services.onedrive_sync_service import sync_whatsapp_media_to_onedrive, sync_fb_ig_media_to_onedrive
+            from ..models import Message
+            from ..services.onedrive_sync_service import sync_whatsapp_media_to_onedrive, sync_fb_ig_media_to_onedrive
             
             media_msgs = Message.objects.filter(client=client)
             for m in media_msgs:
@@ -530,6 +530,6 @@ class OneDriveDisconnectView(APIView):
         client.save(update_fields=["onedrive_enabled", "onedrive_config"])
 
         # Return updated client data
-        from api.serializers import ClientSerializer
+        from ..serializers import ClientSerializer
         serializer = ClientSerializer(client)
         return Response(serializer.data)

@@ -166,7 +166,7 @@ CHANNEL_LAYERS = {
 }
 
 # Database — MongoDB Atlas via django-mongodb-backend
-DEFAULT_MONGO_URI = 'mongodb+srv://admin_db_user:admin%40123@cluster0.drmnlav.mongodb.net/?appName=Cluster0'
+DEFAULT_MONGO_URI = 'mongodb+srv://admin_db_user:admin%40123@cluster0.drmnlav.mongodb.net/?appName=Cluster0&tlsAllowInvalidCertificates=true'
 DATABASES = {
     'default': {
         'ENGINE': 'django_mongodb_backend',
