@@ -29,6 +29,7 @@ class Client(models.Model):
     google_sheets_enabled = models.BooleanField(default=False)
     google_docs_enabled = models.BooleanField(default=False)
     google_slides_enabled = models.BooleanField(default=False)
+    zoho_enabled = models.BooleanField(default=False)
     
     # WhatsApp Config
     whatsapp_access_token = models.TextField(null=True, blank=True)
@@ -55,6 +56,7 @@ class Client(models.Model):
     google_sheets_config = models.JSONField(default=dict, blank=True)
     google_docs_config = models.JSONField(default=dict, blank=True)
     google_slides_config = models.JSONField(default=dict, blank=True)
+    zoho_config = models.JSONField(default=dict, blank=True)
     settings = models.JSONField(default=dict, blank=True)
     
     # Enterprise Features

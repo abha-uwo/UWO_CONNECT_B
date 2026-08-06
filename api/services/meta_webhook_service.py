@@ -161,6 +161,27 @@ class MetaWebhookService:
                                 except Exception as _gse:
                                     logger.warning("Google Sheets WA hook error: %s", _gse)
 
+                            # Zoho CRM: auto-export incoming WhatsApp lead in background
+                            if client.zoho_enabled:
+                                try:
+                                    from ..services.zoho_service import create_zoho_lead
+                                    import threading
+                                    
+                                    def run_zoho_sync():
+                                        try:
+                                            lead_data = {
+                                                "Last_Name": contact.name or f"WhatsApp ({from_number})",
+                                                "Phone": from_number,
+                                                "Lead_Source": "WhatsApp Chatbot"
+                                            }
+                                            create_zoho_lead(client, lead_data)
+                                        except Exception as e:
+                                            logger.warning(f"Background Zoho Sync Failed: {e}")
+                                            
+                                    threading.Thread(target=run_zoho_sync, daemon=True).start()
+                                except Exception as _ze:
+                                    logger.warning("Zoho WA hook error: %s", _ze)
+
                             if body:
                                 if not contact.bot_paused:
                                     MetaWebhookService.handle_automations_whatsapp(client, from_number, body, phone_number_id)

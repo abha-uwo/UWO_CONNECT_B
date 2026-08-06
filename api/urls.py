@@ -20,6 +20,7 @@ from .views import (
     GoogleSlidesConnectView, GoogleSlidesCallbackView, GoogleSlidesStatusView, GoogleSlidesSyncView, GoogleSlidesCreatePresentationView, GoogleSlidesDisconnectView,
     PublicCalendarSlotsView, PublicCalendarBookView
 )
+from api.views.zoho_views import ZohoConnectView, ZohoCallbackView, ZohoDisconnectView, ZohoTestLeadView
 
 router = DefaultRouter()
 router.register(r'clients', ClientViewSet, basename='client')
@@ -152,6 +153,16 @@ urlpatterns = [
     path('google-slides/create-presentation/', GoogleSlidesCreatePresentationView.as_view()),
     path('google-slides/disconnect', GoogleSlidesDisconnectView.as_view(), name='gslides-disconnect'),
     path('google-slides/disconnect/', GoogleSlidesDisconnectView.as_view()),
+    
+    # Zoho Integration
+    path('zoho/connect', ZohoConnectView.as_view(), name='zoho-connect'),
+    path('zoho/connect/', ZohoConnectView.as_view()),
+    path('zoho/callback', ZohoCallbackView.as_view(), name='zoho-callback'),
+    path('zoho/callback/', ZohoCallbackView.as_view()),
+    path('zoho/disconnect', ZohoDisconnectView.as_view(), name='zoho-disconnect'),
+    path('zoho/disconnect/', ZohoDisconnectView.as_view()),
+    path('zoho/test-lead', ZohoTestLeadView.as_view(), name='zoho-test-lead'),
+    path('zoho/test-lead/', ZohoTestLeadView.as_view()),
     
     # Public endpoints
     path('public/calendar/<str:client_id>/slots', PublicCalendarSlotsView.as_view(), name='public-calendar-slots'),

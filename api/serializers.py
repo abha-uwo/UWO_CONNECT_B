@@ -30,6 +30,7 @@ class ClientSerializer(serializers.ModelSerializer):
     google_sheets_config = serializers.SerializerMethodField()
     google_docs_config = serializers.SerializerMethodField()
     google_slides_config = serializers.SerializerMethodField()
+    zoho_config = serializers.SerializerMethodField()
 
     class Meta:
         model = Client
@@ -101,6 +102,14 @@ class ClientSerializer(serializers.ModelSerializer):
             'default_presentation_url', 'auto_generate_pitch_decks',
             'auto_generate_catalog_decks', 'presentations_created_count',
             'last_sync_time', 'connected_at', 'recent_presentations',
+        }
+        return {k: v for k, v in config.items() if k in safe_keys}
+
+    def get_zoho_config(self, obj):
+        """Return Zoho config without sensitive OAuth tokens."""
+        config = obj.zoho_config or {}
+        safe_keys = {
+            'account_email', 'domain', 'connected_at', 'last_sync_time'
         }
         return {k: v for k, v in config.items() if k in safe_keys}
 
