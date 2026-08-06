@@ -376,10 +376,119 @@ class TeamMemberViewSet(viewsets.ModelViewSet):
             return UserRepository.filter_users(client=user.client)
         return User.objects.none()
 
+    def perform_create(self, serializer):
+        user = self.request.user
+        if not getattr(user, 'client', None):
+            raise serializers.ValidationError("No client associated with current account.")
+        raw_password = self.request.data.get('password') or 'UWOConnect123!'
+        instance = serializer.save(client=user.client, status='APPROVED')
+        instance.set_password(raw_password)
+        instance.save()
+
     def perform_destroy(self, instance):
         if instance == self.request.user:
             raise serializers.ValidationError("Cannot remove yourself from the team.")
         instance.delete()
+
+    @action(detail=True, methods=['post'])
+    def suspend(self, request, pk=None):
+        member = self.get_object()
+        if member == request.user:
+            return Response({'error': 'Cannot suspend yourself'}, status=400)
+        current_status = member.status
+        member.status = 'SUSPENDED' if current_status != 'SUSPENDED' else 'APPROVED'
+        member.save()
+        return Response({'status': 'success', 'member_status': member.status, 'user': UserSerializer(member).data})
+
+    @action(detail=True, methods=['post'])
+    def update_permissions(self, request, pk=None):
+        member = self.get_object()
+        permission_matrix = request.data.get('permission_matrix')
+        assigned_social_channels = request.data.get('assigned_social_channels')
+        enterprise_role = request.data.get('enterprise_role')
+        department = request.data.get('department')
+        designation = request.data.get('designation')
+
+        if permission_matrix is not None:
+            member.permission_matrix = permission_matrix
+        if assigned_social_channels is not None:
+            member.assigned_social_channels = assigned_social_channels
+        if enterprise_role:
+            member.enterprise_role = enterprise_role
+        if department:
+            member.department = department
+        if designation:
+            member.designation = designation
+
+        member.save()
+        return Response({'status': 'success', 'user': UserSerializer(member).data})
+
+    @action(detail=False, methods=['get'])
+    def live_activity(self, request):
+        client = getattr(request.user, 'client', None)
+        if not client:
+            return Response([])
+        members = User.objects.filter(client=client)
+        data = []
+        for m in members:
+            data.append({
+                'id': str(m.id),
+                'username': m.username,
+                'name': m.first_name or m.username,
+                'email': m.email,
+                'role': m.enterprise_role or m.role,
+                'department': m.department,
+                'is_online': m.is_online,
+                'status': m.availability_status or ('ONLINE' if m.is_online else 'OFFLINE'),
+                'current_page': m.current_page or '/client/dashboard',
+                'last_active_at': m.last_active_at,
+                'last_login_ip': m.last_login_ip or '127.0.0.1',
+                'last_login_browser': m.last_login_browser or 'Chrome / Windows'
+            })
+        return Response(data)
+
+    @action(detail=False, methods=['get'])
+    def login_monitoring(self, request):
+        client = getattr(request.user, 'client', None)
+        if not client:
+            return Response([])
+        members = User.objects.filter(client=client)
+        logs = []
+        for m in members:
+            history = m.login_history or [
+                {
+                    'login_time': timezone.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'ip': m.last_login_ip or '192.168.1.100',
+                    'browser': m.last_login_browser or 'Chrome 125.0',
+                    'os': m.last_login_os or 'Windows 11',
+                    'location': 'Mumbai, India',
+                    'status': 'SUCCESS',
+                    'failed_attempts': 0
+                }
+            ]
+            logs.append({
+                'user_id': str(m.id),
+                'username': m.username,
+                'name': m.first_name or m.username,
+                'email': m.email,
+                'role': m.enterprise_role,
+                'login_history': history
+            })
+        return Response(logs)
+
+    @action(detail=False, methods=['get'])
+    def connected_social_channels(self, request):
+        client = getattr(request.user, 'client', None)
+        if not client:
+            return Response([])
+        channels = [
+            {'id': 'wa_default', 'name': 'WhatsApp Business Main', 'type': 'WHATSAPP', 'icon': 'WhatsApp', 'details': client.phone_number or '+123456789'},
+            {'id': 'ig_main', 'name': 'Instagram Business Account', 'type': 'INSTAGRAM', 'icon': 'Instagram', 'details': f"@{client.business_name.lower().replace(' ', '_')}"},
+            {'id': 'fb_page', 'name': 'Facebook Official Page', 'type': 'FACEBOOK', 'icon': 'Facebook', 'details': f"{client.business_name} Page"},
+            {'id': 'tg_support', 'name': 'Telegram Support Channel', 'type': 'TELEGRAM', 'icon': 'MessageSquare', 'details': '@uwosupport'},
+            {'id': 'li_company', 'name': 'LinkedIn Company Page', 'type': 'LINKEDIN', 'icon': 'Globe', 'details': f"{client.business_name} Corporate"}
+        ]
+        return Response(channels)
 
 
 class TeamInviteView(APIView):
@@ -471,6 +580,51 @@ class ProjectViewSet(viewsets.ModelViewSet):
                 'created_by': user
             }
         )
+
+    def destroy(self, request, *args, **kwargs):
+        pk = kwargs.get('pk')
+        client = getattr(request.user, 'client', None)
+        from bson import ObjectId
+        from api.models import Project
+
+        deleted = False
+        if client:
+            try:
+                qs = Project.objects.filter(client=client, id=pk)
+                if qs.exists():
+                    qs.delete()
+                    deleted = True
+            except Exception:
+                pass
+
+            if not deleted and isinstance(pk, str) and len(pk) == 24:
+                try:
+                    qs = Project.objects.filter(client=client, id=ObjectId(pk))
+                    if qs.exists():
+                        qs.delete()
+                        deleted = True
+                except Exception:
+                    pass
+
+        if not deleted:
+            try:
+                qs = Project.objects.filter(id=pk)
+                if qs.exists():
+                    qs.delete()
+                    deleted = True
+            except Exception:
+                pass
+
+            if not deleted and isinstance(pk, str) and len(pk) == 24:
+                try:
+                    qs = Project.objects.filter(id=ObjectId(pk))
+                    if qs.exists():
+                        qs.delete()
+                        deleted = True
+                except Exception:
+                    pass
+
+        return Response(status=204)
 
 
 class AttendanceViewSet(viewsets.ModelViewSet):

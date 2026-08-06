@@ -113,7 +113,14 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'name', 'first_name', 'role', 'enterprise_role', 'department', 'designation', 'reporting_manager', 'reporting_manager_name', 'status', 'client', 'permissions', 'assigned_platforms', 'employee_id', 'joining_date', 'working_hours', 'salary_visibility', 'skills', 'availability_status', 'is_online', 'last_active_at')
+        fields = (
+            'id', 'username', 'email', 'name', 'first_name', 'role', 'enterprise_role', 'department',
+            'designation', 'reporting_manager', 'reporting_manager_name', 'status', 'client',
+            'permissions', 'assigned_platforms', 'assigned_social_channels', 'permission_matrix',
+            'employee_id', 'joining_date', 'working_hours', 'salary_visibility', 'skills',
+            'availability_status', 'is_online', 'last_active_at', 'timezone', 'language',
+            'current_page', 'last_login_ip', 'last_login_browser', 'last_login_os', 'login_history'
+        )
         extra_kwargs = {'password': {'write_only': True}}
 
 class TeamInviteSerializer(serializers.ModelSerializer):
