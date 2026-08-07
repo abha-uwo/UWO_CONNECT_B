@@ -424,6 +424,28 @@ class Campaign(models.Model):
     def __str__(self):
         return f"{self.name} ({self.status})"
 
+class CampaignFollowUp(models.Model):
+    campaign = models.OneToOneField(Campaign, on_delete=models.CASCADE, related_name='follow_up')
+    delay_hours = models.IntegerField(default=24)
+    followup_template = models.ForeignKey(Template, on_delete=models.SET_NULL, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"FollowUp for {self.campaign.name} ({self.delay_hours}h)"
+
+class FollowUpLog(models.Model):
+    followup = models.ForeignKey(CampaignFollowUp, on_delete=models.CASCADE, related_name='logs')
+    contact = models.ForeignKey(Contact, on_delete=models.CASCADE)
+    status = models.CharField(max_length=50, default='SENT')
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('followup', 'contact')
+
+    def __str__(self):
+        return f"FollowUp sent to {self.contact.phone_number}"
+
 class SupportMessage(models.Model):
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='support_messages')
     sender = models.ForeignKey(User, on_delete=models.CASCADE)

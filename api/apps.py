@@ -73,12 +73,14 @@ class ApiConfig(AppConfig):
                                 # Process each campaign in its own thread to avoid blocking the scheduler
                                 camp_thread = threading.Thread(target=CampaignService.process_campaign, args=(campaign.id,))
                                 camp_thread.start()
-                                
-                        except Exception as poll_err:
-                            print(f"[Campaign Scheduler Error]: {poll_err}")
+                        except Exception as e:
+                            print(f"[Campaign Scheduler Error]: {e}")
                         
-                        # Wait 30 seconds before next check
-                        time.sleep(30)
+                        time.sleep(60)
 
-                camp_thread_main = threading.Thread(target=campaign_scheduler, daemon=True, name="CampaignSchedulerPoller")
-                camp_thread_main.start()
+                campaign_thread = threading.Thread(target=campaign_scheduler, daemon=True, name="CampaignBackgroundScheduler")
+                campaign_thread.start()
+
+                # Start Follow-up Scheduler
+                from api.scheduler_followups import start_followup_scheduler
+                start_followup_scheduler()

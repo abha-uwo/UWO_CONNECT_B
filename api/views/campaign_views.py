@@ -112,10 +112,23 @@ class CampaignViewSet(viewsets.ModelViewSet):
         scheduled_at = serializer.validated_data.get('scheduled_at')
         if scheduled_at and scheduled_at > timezone.now():
             campaign = serializer.save(client=client, status='SCHEDULED')
-            AdminService.log_admin_action(self.request, campaign, 'Campaigns', 'CREATE', after_value=str(serializer.data))
         else:
             campaign = serializer.save(client=client, status='SENDING')
-            AdminService.log_admin_action(self.request, campaign, 'Campaigns', 'CREATE', after_value=str(serializer.data))
+
+        delay_hours = self.request.data.get('followup_delay_hours')
+        followup_template_id = self.request.data.get('followup_template_id')
+        if delay_hours and followup_template_id:
+            from ..models import CampaignFollowUp, Template
+            template = Template.objects.filter(id=followup_template_id, client=client).first()
+            if template:
+                CampaignFollowUp.objects.create(
+                    campaign=campaign,
+                    delay_hours=int(delay_hours),
+                    followup_template=template
+                )
+
+        AdminService.log_admin_action(self.request, campaign, 'Campaigns', 'CREATE', after_value=str(serializer.data))
+        if campaign.status == 'SENDING':
             thread = threading.Thread(target=self.process_campaign, args=(campaign.id,))
             thread.start()
 

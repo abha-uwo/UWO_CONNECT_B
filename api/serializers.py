@@ -249,11 +249,15 @@ class CampaignSerializer(serializers.ModelSerializer):
     id = ObjectIdField(read_only=True)
     client = ObjectIdField(read_only=True)
     template = serializers.PrimaryKeyRelatedField(queryset=Template.objects.all(), required=False, allow_null=True)
+    has_followup = serializers.SerializerMethodField()
 
     class Meta:
         model = Campaign
         fields = '__all__'
         read_only_fields = ('client', 'created_at', 'updated_at')
+        
+    def get_has_followup(self, obj):
+        return hasattr(obj, 'follow_up') and obj.follow_up.is_active
 
 class KnowledgeDocumentSerializer(serializers.ModelSerializer):
     id = ObjectIdField(read_only=True)
