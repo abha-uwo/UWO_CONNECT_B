@@ -248,7 +248,7 @@ class TemplateSerializer(serializers.ModelSerializer):
 class CampaignSerializer(serializers.ModelSerializer):
     id = ObjectIdField(read_only=True)
     client = ObjectIdField(read_only=True)
-    template = ObjectIdField(read_only=True)
+    template = serializers.PrimaryKeyRelatedField(queryset=Template.objects.all(), required=False, allow_null=True)
 
     class Meta:
         model = Campaign

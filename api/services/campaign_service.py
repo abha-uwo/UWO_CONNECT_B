@@ -11,8 +11,23 @@ class CampaignService:
             client = campaign.client
             template = campaign.template
             
-            token = client.whatsapp_access_token
-            if not template or not token or not client.whatsapp_phone_number_id:
+            channel = getattr(campaign, 'channel', 'WHATSAPP')
+            
+            if channel == 'WHATSAPP':
+                token = client.whatsapp_access_token
+                if not template or not token or not client.whatsapp_phone_number_id:
+                    campaign.status = 'FAILED'
+                    campaign.save()
+                    return
+            elif channel in ['FACEBOOK', 'INSTAGRAM']:
+                body = getattr(campaign, 'body', '')
+                fb_token = client.facebook_config.get('access_token') if channel == 'FACEBOOK' else client.instagram_config.get('access_token')
+                page_id = client.facebook_config.get('page_id') if channel == 'FACEBOOK' else client.instagram_config.get('ig_id')
+                if not body or not fb_token or not page_id:
+                    campaign.status = 'FAILED'
+                    campaign.save()
+                    return
+            else:
                 campaign.status = 'FAILED'
                 campaign.save()
                 return
@@ -23,37 +38,56 @@ class CampaignService:
             else:
                 contacts = ContactRepository.filter_contacts(client=client, stage=campaign.audience_filter)
 
-            url = f"https://graph.facebook.com/v19.0/{client.whatsapp_phone_number_id}/messages"
-            headers = {
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json"
-            }
-
             for contact in contacts:
-                if not contact.phone_number:
-                    campaign.total_failed += 1
-                    continue
-                
-                # We need country code, assume it's in phone_number for now
-                payload = {
-                    "messaging_product": "whatsapp",
-                    "to": contact.phone_number,
-                    "type": "template",
-                    "template": {
-                        "name": template.name,
-                        "language": {
-                            "code": template.language
-                        }
-                    }
-                }
-                
                 try:
                     from ..integrations.meta_integration import MetaIntegration
-                    res = MetaIntegration.send_whatsapp_message(client.whatsapp_phone_number_id, token, payload)
-                    if res.status_code == 200:
-                        campaign.total_sent += 1
-                    else:
-                        campaign.total_failed += 1
+                    if channel == 'WHATSAPP':
+                        if not contact.phone_number:
+                            campaign.total_failed += 1
+                            continue
+                        
+                        payload = {
+                            "messaging_product": "whatsapp",
+                            "to": contact.phone_number,
+                            "type": "template",
+                            "template": {
+                                "name": template.name,
+                                "language": {
+                                    "code": template.language
+                                }
+                            }
+                        }
+                        res = MetaIntegration.send_whatsapp_message(client.whatsapp_phone_number_id, token, payload)
+                        if res.status_code == 200:
+                            campaign.total_sent += 1
+                        else:
+                            campaign.total_failed += 1
+                    
+                    elif channel in ['FACEBOOK', 'INSTAGRAM']:
+                        if not contact.email and not contact.phone_number: # Need some ID, ideally PSID/IGSID stored in contact metadata
+                            campaign.total_failed += 1
+                            continue
+                            
+                        # Assuming contact.metadata contains 'psid' for FB or 'igsid' for IG
+                        recipient_id = contact.metadata.get('psid') if channel == 'FACEBOOK' else contact.metadata.get('igsid')
+                        if not recipient_id:
+                            campaign.total_failed += 1
+                            continue
+                            
+                        payload = {
+                            "recipient": {"id": recipient_id},
+                            "message": {"text": getattr(campaign, 'body', '')},
+                            "messaging_type": "MESSAGE_TAG",
+                            "tag": "POST_PURCHASE_UPDATE" # Safe tag for outside 24h window if applicable, otherwise might fail
+                        }
+                        url = f"https://graph.facebook.com/v19.0/{page_id}/messages"
+                        res = requests.post(url, headers={"Authorization": f"Bearer {fb_token}"}, json=payload)
+                        
+                        if res.status_code == 200:
+                            campaign.total_sent += 1
+                        else:
+                            campaign.total_failed += 1
+
                 except Exception as e:
                     campaign.total_failed += 1
 

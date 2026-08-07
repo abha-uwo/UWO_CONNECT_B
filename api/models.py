@@ -401,13 +401,16 @@ class Template(models.Model):
 class Campaign(models.Model):
     STATUS_CHOICES = [
         ('DRAFT', 'Draft'),
+        ('SCHEDULED', 'Scheduled'),
         ('SENDING', 'Sending'),
         ('COMPLETED', 'Completed'),
         ('FAILED', 'Failed'),
     ]
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name='campaigns')
     name = models.CharField(max_length=255)
-    template = models.ForeignKey(Template, on_delete=models.SET_NULL, null=True)
+    channel = models.CharField(max_length=50, default='WHATSAPP')
+    body = models.TextField(null=True, blank=True)
+    template = models.ForeignKey(Template, on_delete=models.SET_NULL, null=True, blank=True)
     audience_filter = models.CharField(max_length=50, default='ALL') # 'ALL', 'NEW', 'WON', etc.
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='DRAFT')
     total_sent = models.IntegerField(default=0)

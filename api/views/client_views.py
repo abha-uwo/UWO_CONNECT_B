@@ -305,49 +305,6 @@ class ClientMessagesView(APIView):
             })
         return Response(data)
 
-class MediaProxyView(APIView):
-    """Proxy endpoint to stream WhatsApp/Meta media files to the frontend with correct Content-Type."""
-    permission_classes = []
-    authentication_classes = []
-
-    def get(self, request):
-        media_id = request.query_params.get('media_id')
-        media_url = request.query_params.get('media_url')
-        
-        client = get_tenant_client(request)
-        if not client:
-            client = Client.objects.filter(whatsapp_access_token__isnull=False).exclude(whatsapp_access_token='').first()
-
-        token = client.whatsapp_access_token if client else None
-        if media_id and token:
-            try:
-                url_res = requests.get(
-                    f"https://graph.facebook.com/v18.0/{media_id}",
-                    headers={"Authorization": f"Bearer {token}"},
-                    timeout=10
-                )
-                if url_res.status_code == 200:
-                    media_url = url_res.json().get('url')
-            except Exception as e:
-                logger.error("Failed to get media URL for %s: %s", media_id, e)
-
-        if media_url:
-            try:
-                headers = {"Authorization": f"Bearer {token}"} if (token and "facebook.com" in media_url) else {}
-                file_res = requests.get(media_url, headers=headers, timeout=30)
-                if file_res.status_code == 200:
-                    content_type = file_res.headers.get('Content-Type', 'application/octet-stream')
-                    from django.http import HttpResponse
-                    response = HttpResponse(file_res.content, content_type=content_type)
-                    filename = request.query_params.get('filename')
-                    if filename:
-                        response['Content-Disposition'] = f'inline; filename="{filename}"'
-                    return response
-            except Exception as e:
-                logger.error("Failed downloading media from %s: %s", media_url, e)
-
-        return Response({"error": "Media file not found or download failed."}, status=404)
-
     def post(self, request):
         client = get_tenant_client(request)
         if not client:
@@ -432,6 +389,49 @@ class MediaProxyView(APIView):
             return Response({"error": f"Unsupported channel: {channel}"}, status=400)
             
         return Response({"status": "sent"})
+
+class MediaProxyView(APIView):
+    """Proxy endpoint to stream WhatsApp/Meta media files to the frontend with correct Content-Type."""
+    permission_classes = []
+    authentication_classes = []
+
+    def get(self, request):
+        media_id = request.query_params.get('media_id')
+        media_url = request.query_params.get('media_url')
+        
+        client = get_tenant_client(request)
+        if not client:
+            client = Client.objects.filter(whatsapp_access_token__isnull=False).exclude(whatsapp_access_token='').first()
+
+        token = client.whatsapp_access_token if client else None
+        if media_id and token:
+            try:
+                url_res = requests.get(
+                    f"https://graph.facebook.com/v18.0/{media_id}",
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=10
+                )
+                if url_res.status_code == 200:
+                    media_url = url_res.json().get('url')
+            except Exception as e:
+                logger.error("Failed to get media URL for %s: %s", media_id, e)
+
+        if media_url:
+            try:
+                headers = {"Authorization": f"Bearer {token}"} if (token and "facebook.com" in media_url) else {}
+                file_res = requests.get(media_url, headers=headers, timeout=30)
+                if file_res.status_code == 200:
+                    content_type = file_res.headers.get('Content-Type', 'application/octet-stream')
+                    from django.http import HttpResponse
+                    response = HttpResponse(file_res.content, content_type=content_type)
+                    filename = request.query_params.get('filename')
+                    if filename:
+                        response['Content-Disposition'] = f'inline; filename="{filename}"'
+                    return response
+            except Exception as e:
+                logger.error("Failed downloading media from %s: %s", media_url, e)
+
+        return Response({"error": "Media file not found or download failed."}, status=404)
 
 class AuditLogMixin:
     def get_module_name(self):

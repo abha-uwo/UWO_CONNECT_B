@@ -106,12 +106,18 @@ class CampaignViewSet(viewsets.ModelViewSet):
         return CampaignRepository.filter_campaigns(client=client).order_by('-created_at')
 
     def perform_create(self, serializer):
+        from django.utils import timezone
         client = get_tenant_client(self.request)
-        campaign = serializer.save(client=client, status='SENDING')
-        AdminService.log_admin_action(self.request, campaign, 'Campaigns', 'CREATE', after_value=str(serializer.data))
         
-        thread = threading.Thread(target=self.process_campaign, args=(campaign.id,))
-        thread.start()
+        scheduled_at = serializer.validated_data.get('scheduled_at')
+        if scheduled_at and scheduled_at > timezone.now():
+            campaign = serializer.save(client=client, status='SCHEDULED')
+            AdminService.log_admin_action(self.request, campaign, 'Campaigns', 'CREATE', after_value=str(serializer.data))
+        else:
+            campaign = serializer.save(client=client, status='SENDING')
+            AdminService.log_admin_action(self.request, campaign, 'Campaigns', 'CREATE', after_value=str(serializer.data))
+            thread = threading.Thread(target=self.process_campaign, args=(campaign.id,))
+            thread.start()
 
     def perform_update(self, serializer):
         before_instance = self.get_object()

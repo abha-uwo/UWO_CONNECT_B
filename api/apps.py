@@ -53,3 +53,32 @@ class ApiConfig(AppConfig):
                 thread = threading.Thread(target=youtube_poller, daemon=True, name="YouTubeBackgroundPoller")
                 thread.start()
 
+                def campaign_scheduler():
+                    time.sleep(10)  # Wait for db setup to settle
+                    print("[Campaign Scheduler]: Background loop STARTED.")
+                    from django.utils import timezone
+                    while True:
+                        try:
+                            close_old_connections()
+                            from api.models import Campaign
+                            from api.services.campaign_service import CampaignService
+                            
+                            # Find all scheduled campaigns where scheduled_at is less than or equal to now
+                            now = timezone.now()
+                            ready_campaigns = Campaign.objects.filter(status='SCHEDULED', scheduled_at__lte=now)
+                            for campaign in ready_campaigns:
+                                campaign.status = 'SENDING'
+                                campaign.save()
+                                
+                                # Process each campaign in its own thread to avoid blocking the scheduler
+                                camp_thread = threading.Thread(target=CampaignService.process_campaign, args=(campaign.id,))
+                                camp_thread.start()
+                                
+                        except Exception as poll_err:
+                            print(f"[Campaign Scheduler Error]: {poll_err}")
+                        
+                        # Wait 30 seconds before next check
+                        time.sleep(30)
+
+                camp_thread_main = threading.Thread(target=campaign_scheduler, daemon=True, name="CampaignSchedulerPoller")
+                camp_thread_main.start()
